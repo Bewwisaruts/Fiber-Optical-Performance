@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Network Elements Monitoring | Alarm Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --bg: #0A0E14;
+  --panel: #121821;
+  --panel-2: #171F2A;
+  --panel-3: #1C2531;
+  --border: #232D3A;
+  --border-soft: #1A2330;
+  --text: #E7EDF4;
+  --text-dim: #8996A6;
+  --text-faint: #55616F;
+  --accent: #34D6BE;
+  --accent-dim: #1E8577;
+  --accent-bg: rgba(52,214,190,0.10);
+  --ok: #3ECF8E;
+  --ok-bg: rgba(62,207,142,0.13);
+
+  --sev-critical: #F2585F;
+  --sev-critical-bg: rgba(242,88,95,0.15);
+  --sev-major: #F2954D;
+  --sev-major-bg: rgba(242,149,77,0.15);
+  --sev-minor: #F2C94A;
+  --sev-minor-bg: rgba(242,201,74,0.15);
+  --sev-warning: #6FA8DC;
+  --sev-warning-bg: rgba(111,168,220,0.15);
+  --sev-indeterminate: #8996A6;
+  --sev-indeterminate-bg: rgba(137,150,166,0.15);
+
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  --font-body: -apple-system, 'Segoe UI', ui-sans-serif, system-ui, Roboto, sans-serif;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+*{ box-sizing: border-box; }
+html{ background: var(--bg); }
+body{
+  margin:0;
+  background:
+    radial-gradient(1100px 500px at 15% -10%, rgba(52,214,190,0.07), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(52,214,190,0.04), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+::selection{ background: var(--accent); color: var(--bg); }
+:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.shell{ max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; }
+
+.header{ display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:20px; }
+.brand{ display:flex; align-items:center; gap:12px; }
+.brand-icon{ flex:none; display:flex; align-items:end; }
+.brand-icon svg rect:nth-child(1){ opacity:.35; }
+.brand-icon svg rect:nth-child(2){ opacity:.6; }
+.brand-icon svg rect:nth-child(3){ opacity:.85; }
+.brand-icon svg rect:nth-child(4){ opacity:1; }
+.brand-text{ line-height:1.15; }
+.brand-title{ font-family: var(--font-display); font-weight:700; font-size:22px; letter-spacing:-0.01em; margin:0; color:var(--text); }
+.brand-subtitle{ margin:3px 0 0; font-size:13px; color:var(--text-dim); }
+
+.header-right{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+.sync-info{ display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:12px; color:var(--text-dim);
+  background:var(--panel); border:1px solid var(--border-soft); padding:7px 12px; border-radius:999px; }
+.sync-dot{ width:7px; height:7px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 3px var(--ok-bg); flex:none; }
+.sync-dot.is-fallback{ background: var(--sev-minor); box-shadow:0 0 0 3px var(--sev-minor-bg); }
+.source-note{ font-size:11px; font-family:var(--font-mono); color:var(--text-faint); max-width:340px; text-align:right; }
+.source-note.is-fallback{ color: var(--sev-minor); }
+
+.upload-row{ display:flex; align-items:center; gap:10px; }
+.btn{ font-family: var(--font-body); font-size:13px; font-weight:600; cursor:pointer; border-radius: var(--radius-sm);
+  padding:8px 14px; border:1px solid var(--border); background: var(--panel-2); color: var(--text);
+  transition: background .15s, border-color .15s, transform .1s; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.btn:hover{ background: var(--panel-3); border-color:#2C3A4A; }
+.btn:active{ transform: translateY(1px); }
+.btn--ghost{ background:transparent; }
+.btn--sm{ padding:6px 10px; font-size:12px; }
+#fileInput{ display:none; }
+.upload-status{ font-size:12px; font-family: var(--font-mono); padding:6px 10px; border-radius:var(--radius-sm); max-width:280px; text-align:right; }
+.upload-status.ok{ color: var(--ok); }
+.upload-status.err{ color: var(--sev-critical); }
+
+/* ---------- Live status banner ---------- */
+.live-banner{ border-radius: var(--radius-lg); padding:18px 22px; margin-bottom:18px; border:1px solid; }
+.live-banner--ok{ background: var(--ok-bg); border-color: rgba(62,207,142,0.3); }
+.live-banner--active{ background: var(--sev-critical-bg); border-color: rgba(242,88,95,0.35); }
+.live-banner-head{ display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+.live-banner-pulse{ width:10px; height:10px; border-radius:50%; background: var(--sev-critical); flex:none;
+  box-shadow: 0 0 0 0 rgba(242,88,95,0.6); animation: pulse 1.8s infinite; }
+@keyframes pulse{
+  0%{ box-shadow: 0 0 0 0 rgba(242,88,95,0.55); }
+  70%{ box-shadow: 0 0 0 9px rgba(242,88,95,0); }
+  100%{ box-shadow: 0 0 0 0 rgba(242,88,95,0); }
+}
+.live-banner-title{ font-family: var(--font-display); font-weight:700; font-size:16px; color:var(--text); }
+.live-banner--ok .live-banner-title{ color: var(--ok); }
+.live-banner--active .live-banner-title{ color: var(--sev-critical); }
+.live-banner-sub{ font-size:12.5px; color: var(--text-dim); margin-bottom:12px; }
+.live-alarm-list{ display:flex; flex-direction:column; gap:8px; }
+
+/* ---------- Timeline ---------- */
+.timeline-section{ background: var(--panel); border:1px solid var(--border-soft); border-radius: var(--radius-lg); padding:18px 22px; margin-bottom:18px; }
+.timeline-title{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; }
+.timeline-legend{ display:flex; gap:12px; font-size:10.5px; color:var(--text-faint); text-transform:none; letter-spacing:0; }
+.timeline-legend-item{ display:flex; align-items:center; gap:4px; }
+.timeline-legend-dot{ width:8px; height:8px; border-radius:2px; }
+.timeline-bars{ display:flex; align-items:flex-end; gap:6px; height:110px; }
+.timeline-bar-col{ flex:1; display:flex; flex-direction:column-reverse; height:100%; border-radius:3px 3px 0 0; overflow:hidden; cursor:pointer; min-width:4px; background:var(--panel-3); }
+.timeline-seg{ width:100%; flex:none; }
+.timeline-labels{ display:flex; gap:6px; margin-top:8px; }
+.timeline-label{ flex:1; text-align:center; font-family:var(--font-mono); font-size:9.5px; color:var(--text-faint); min-width:4px; }
+
+.card-tooltip{
+  position:fixed; background: var(--panel-3); border:1px solid var(--border); padding:10px 14px;
+  border-radius: var(--radius-sm); pointer-events:none; opacity:0; transition: opacity .15s ease;
+  z-index:9999; box-shadow: 0 8px 24px rgba(0,0,0,0.6); transform: translate(-50%,-100%); margin-top:-8px; white-space:nowrap;
+}
+.card-tooltip.is-visible{ opacity:1; }
+.tooltip-date{ font-family: var(--font-mono); font-size:11px; color: var(--text-dim); margin-bottom:6px; }
+.tooltip-row{ font-size:12px; display:flex; align-items:center; gap:6px; margin-bottom:2px; }
+.tooltip-dot{ width:7px; height:7px; border-radius:2px; }
+
+/* ---------- Condensed stats ---------- */
+.hero{ display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-bottom:18px; }
+.stat-tile{ background: var(--panel); border:1px solid var(--border-soft); border-radius: var(--radius-lg); padding:15px 18px; position:relative; overflow:hidden; }
+.stat-tile::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background: var(--border); }
+.stat-tile--critical::before{ background: var(--sev-critical); }
+.stat-tile--major::before{ background: var(--sev-major); }
+.stat-value{ font-family: var(--font-mono); font-weight:700; font-size:25px; font-variant-numeric: tabular-nums; line-height:1; margin-bottom:5px; }
+.stat-tile--critical .stat-value{ color: var(--sev-critical); }
+.stat-tile--major .stat-value{ color: var(--sev-major); }
+.stat-label{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color: var(--text-dim); }
+
+.controls{ background: var(--panel); border:1px solid var(--border-soft); border-radius: var(--radius-lg); padding:16px 18px; margin-bottom:16px; }
+.search-row{ display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+.search-field{ position:relative; flex:1; min-width:240px; }
+.search-field svg{ position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-faint); pointer-events:none; }
+.search-input{ width:100%; padding:10px 12px 10px 36px; font-size:14px; font-family:var(--font-mono);
+  background: var(--panel-2); border:1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); }
+.search-input::placeholder{ color: var(--text-faint); font-family: var(--font-body); }
+.search-input:focus{ border-color: var(--accent); }
+
+.filter-row{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.chip-group{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.chip-group-label{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); margin-right:2px; }
+.chip{ font-family: var(--font-body); font-size:12.5px; font-weight:600; color: var(--text-dim); background: var(--panel-2);
+  border:1px solid var(--border); border-radius:999px; padding:6px 11px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition: all .12s; }
+.chip:hover{ border-color:#31404F; color:var(--text); }
+.chip.is-active{ background: var(--accent-bg); border-color: var(--accent-dim); color: var(--accent); }
+.chip-count{ font-family:var(--font-mono); opacity:.85; }
+.chip-dot{ width:7px; height:7px; border-radius:50%; flex:none; }
+
+.select-field select{ font-family: var(--font-body); font-size:12.5px; font-weight:600; color: var(--text-dim); background: var(--panel-2);
+  border:1px solid var(--border); border-radius:999px; padding:6px 28px 6px 11px; cursor:pointer; max-width:220px; }
+.clear-link{ margin-left:auto; font-size:12.5px; color: var(--text-faint); background:none; border:none; cursor:pointer;
+  text-decoration:underline; text-underline-offset:2px; padding:4px; }
+.clear-link:hover{ color: var(--text-dim); }
+
+.sort-row{ display:flex; align-items:center; gap:10px; margin:2px 0 14px; font-size:12.5px; color:var(--text-faint); }
+.sort-row select{ font-family: var(--font-body); font-size:12.5px; color: var(--text-dim); background: var(--panel-2);
+  border:1px solid var(--border); border-radius: var(--radius-sm); padding:5px 10px; cursor:pointer; }
+
+.section-heading{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); margin:26px 0 12px; }
+
+.severity-section{ margin-bottom: 22px; }
+.severity-section-head{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.severity-section-dot{ width:11px; height:11px; border-radius:50%; flex:none; }
+.severity-section-title{ font-family:var(--font-display); font-weight:600; font-size:14px; color:var(--text); }
+.severity-section-count{ font-family:var(--font-mono); font-size:12px; color:var(--text-faint); }
+.severity-section-line{ flex:1; height:1px; background:var(--border-soft); }
+
+.alarm-card{ display:flex; align-items:center; gap:16px; background:var(--panel); border:1px solid var(--border-soft);
+  border-left:3px solid transparent; border-radius:var(--radius); padding:12px 18px; margin-bottom:7px; cursor:pointer;
+  transition:background .1s, border-color .1s; }
+.alarm-card:hover{ background:var(--panel-2); border-left-color:var(--accent); }
+.alarm-card-sev{ width:8px; height:8px; border-radius:50%; flex:none; }
+.alarm-card-main{ flex:1; min-width:0; }
+.alarm-card-name{ font-size:13.5px; color:var(--text); font-weight:500; margin-bottom:3px; overflow-wrap:break-word; word-break:break-word; }
+.alarm-card-me{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim); overflow-wrap:break-word; word-break:break-word; }
+.repeat-badge{ font-family:var(--font-mono); font-size:10px; color:var(--sev-major); background:var(--sev-major-bg); border-radius:4px; padding:1px 6px; margin-left:7px; }
+.alarm-card-meta{ display:flex; align-items:center; gap:16px; flex:none; }
+.alarm-card-time-block{ text-align:right; }
+.alarm-card-time{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim); }
+.alarm-card-dur{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-faint); margin-top:2px; }
+.active-pill{ font-family:var(--font-mono); font-size:10px; font-weight:700; padding:3px 9px; border-radius:999px; text-transform:uppercase; white-space:nowrap; }
+.active-pill--active{ background: var(--sev-critical-bg); color: var(--sev-critical); }
+.active-pill--cleared{ background: var(--panel-3); color: var(--text-faint); }
+
+.empty-state{ padding:50px 20px; text-align:center; color: var(--text-dim); background:var(--panel); border:1px solid var(--border-soft); border-radius:var(--radius-lg); }
+.empty-state-title{ font-family:var(--font-display); font-weight:600; font-size:15px; color:var(--text); margin-bottom:6px; }
+.empty-state-sub{ font-size:13px; color:var(--text-faint); }
+
+.backdrop{ position:fixed; inset:0; background: rgba(5,8,12,0.6); backdrop-filter: blur(2px); opacity:0; pointer-events:none; transition: opacity .18s; z-index:20; }
+.backdrop.is-open{ opacity:1; pointer-events:auto; }
+.detail-panel{ position:fixed; top:0; right:0; height:100vh; width:min(440px, 100vw); background: var(--panel);
+  border-left:1px solid var(--border); z-index:21; transform: translateX(100%); transition: transform .22s ease; display:flex; flex-direction:column; }
+.detail-panel.is-open{ transform: translateX(0); }
+.detail-header{ padding:20px 22px; border-bottom:1px solid var(--border-soft); }
+.detail-header-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px; }
+.detail-title{ font-family: var(--font-display); font-size:16px; font-weight:600; color:var(--text); word-break:break-word; }
+.detail-ip{ font-family: var(--font-mono); font-size:14px; color: var(--accent); margin-top:4px; }
+.detail-close{ flex:none; width:30px; height:30px; border-radius:8px; background: var(--panel-2); border:1px solid var(--border);
+  color: var(--text-dim); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:16px; }
+.detail-close:hover{ color:var(--text); border-color:#31404F; }
+.detail-badges{ display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+.sev-badge{ font-family:var(--font-mono); font-size:11px; font-weight:700; padding:3px 9px; border-radius:5px; text-transform:uppercase; letter-spacing:.03em; display:inline-block; }
+.badge{ font-family: var(--font-mono); font-size:11px; font-weight:600; padding:2px 7px; border-radius:5px;
+  background: var(--panel-3); color: var(--text-dim); border:1px solid var(--border); }
+
+.detail-body{ padding:18px 22px; overflow-y:auto; flex:1; }
+.field-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px 16px; margin-bottom:20px; }
+.field-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin-bottom:3px; }
+.field-value{ font-family:var(--font-mono); font-size:13px; color:var(--text); word-break:break-word; }
+
+.related-title{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin:18px 0 10px; padding-top:14px; border-top:1px solid var(--border-soft); }
+.related-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-radius:var(--radius-sm); background:var(--panel-2); margin-bottom:6px; font-size:12px; }
+
+.detail-footnote{ font-size:12px; color: var(--text-faint); line-height:1.6; padding-top:10px; border-top:1px solid var(--border-soft); margin-top:6px; }
+
+footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: var(--text-faint); }
+
+.side-nav-toggle {display: inline-flex; 
+    align-items: center;
+    gap: 8px;
+    margin-right: 16px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s;
+  }
+  .side-nav-toggle:hover {
+    background: var(--panel-3);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .side-nav-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 8, 12, 0.7);
+    backdrop-filter: blur(2px);
+    z-index: 9998;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .side-nav-overlay.is-active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .side-nav-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100vh;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    z-index: 9999;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--font-body);
+  }
+  .side-nav-container.is-active {
+    transform: translateX(0);
+  }
+  .side-nav-header {
+    padding: 24px 20px;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .side-nav-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--accent);
+    margin: 0;
+  }
+  .side-nav-close {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .side-nav-close:hover {
+    color: var(--text);
+  }
+  .side-nav-menu {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .side-nav-item {
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .side-nav-link, .side-nav-submenu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 14px 20px;
+    color: var(--text);
+    text-decoration: none;
+    background: transparent;
+    border: none;
+    font-size: 13.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    text-align: left;
+  }
+  .side-nav-link:hover, .side-nav-submenu-btn:hover {
+    background: var(--panel);
+    color: var(--accent);
+  }
+  .side-nav-submenu {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    background: var(--panel-2);
+    display: none;
+  }
+  .side-nav-submenu.is-open {
+    display: block;
+  }
+  .side-nav-submenu .side-nav-link {
+    padding: 12px 20px 12px 35px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .side-nav-submenu .side-nav-link:hover {
+    color: var(--text);
+  }
+  .side-nav-arrow {
+    font-size: 10px;
+    transition: transform 0.2s;
+  }
+  .is-open .side-nav-arrow {
+    transform: rotate(180deg);
+  }
+
+@media (max-width: 860px){
+  .hero{ grid-template-columns: repeat(2, 1fr); }
+  .header{ flex-direction:column; }
+  .header-right{ align-items:flex-start; }
+  .clear-link{ margin-left:0; }
+  .source-note{ text-align:left; }
+  .alarm-card{ flex-wrap:wrap; }
+  .alarm-card-meta{ width:100%; justify-content:space-between; margin-top:6px; }
+  .timeline-labels .timeline-label:nth-child(odd){ opacity:0; }
+}
+@media (max-width: 480px){
+  .shell{ padding:18px 14px 48px; }
+  .hero{ grid-template-columns: 1fr 1fr; }
+  .field-grid{ grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition-duration:0.01ms !important; animation-duration:0.01ms !important; animation:none !important; }
+}
+
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="header">
+    <div class="brand">
+
+      <button class="side-nav-toggle" onclick="toggleSideNav()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        Menu
+      </button>
+
+      <span class="brand-icon" aria-hidden="true">
+        <svg width="30" height="22" viewBox="0 0 28 20" fill="var(--accent)">
+          <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
+          <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
+          <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
+          <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <p class="brand-title">Network Elements Monitoring</p>
+        <p class="brand-subtitle">Alarm Console (Fault Management)</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="sync-info" id="syncInfo">
+        <span class="sync-dot" id="syncDot" aria-hidden="true"></span>
+        <span id="syncText">Loading…</span>
+      </div>
+      <div class="source-note" id="sourceNote"></div>
+      <div class="upload-row">
+        <span class="upload-status" id="uploadStatus" aria-live="polite"></span>
+        <button class="btn btn--ghost btn--sm" id="uploadBtn" title="Import New File (.xlsx) into Database">
+          &#11014; Import New File (.xlsx)
+        </button>
+        <input type="file" id="fileInput" accept=".xlsx">
+      </div>
+    </div>
+  </div>
+
+  <div class="live-banner" id="liveBanner"></div>
+
+  <div class="timeline-section">
+    <div class="timeline-title">
+      <span>Daily Alarm Activity</span>
+      <span class="timeline-legend" id="timelineLegend"></span>
+    </div>
+    <div class="timeline-bars" id="timelineBars"></div>
+    <div class="timeline-labels" id="timelineLabels"></div>
+  </div>
+
+  <div class="hero" id="heroStats"></div>
+
+  <div class="controls">
+    <div class="search-row">
+      <div class="search-field">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" class="search-input" id="searchInput" list="meList" placeholder="Search for ME Name or Alarm ID…" autocomplete="off">
+        <datalist id="meList"></datalist>
+      </div>
+    </div>
+    <div class="filter-row">
+      <div class="chip-group" id="sevChips"></div>
+      <div class="chip-group" id="typeChips"></div>
+      <div class="select-field">
+        <select id="alarmNameSelect"></select>
+      </div>
+      <button class="clear-link" id="clearBtn">Clear Filters</button>
+    </div>
+  </div>
+
+  <div class="section-heading">Alarm History (Cleared)</div>
+  <div class="sort-row">
+    <span>Sort within each level by:</span>
+    <select id="sortSelect">
+      <option value="recent">Most Recent First</option>
+      <option value="oldest">Oldest First</option>
+      <option value="duration">Longest Duration First</option>
+    </select>
+  </div>
+
+  <div id="alarmFeed"></div>
+  <div class="empty-state" id="emptyState" style="display:none">
+    <div class="empty-state-title">No alarms found matching the criteria</div>
+    <div class="empty-state-sub">Try adjusting your search terms or click "Clear Filters"</div>
+  </div>
+
+  <footer class="page-footer">
+    Severity levels are sourced directly from the originating system and are not calculated internally &mdash; click a card to view details and history of other alarms for the same ME
+  </footer>
+
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+<aside class="detail-panel" id="detailPanel" role="dialog" aria-label="Alarm Details">
+  <div class="detail-header">
+    <div class="detail-header-top">
+      <div>
+        <div class="detail-title" id="detailAlarmName">&mdash;</div>
+        <div class="detail-ip" id="detailMe">&mdash;</div>
+      </div>
+      <button class="detail-close" id="detailClose" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="detail-badges" id="detailBadges"></div>
+  </div>
+  <div class="detail-body" id="detailBody"></div>
+</aside>
+
+<div id="cardTooltip" class="card-tooltip"></div>
+
+<script>
+(function(){
+  'use strict';
+
+  const SEVERITIES = ['critical','major','minor','warning','indeterminate'];
+  const SEV_ORDER = { critical:5, major:4, minor:3, warning:2, indeterminate:1, cleared:0 };
+  const SEV_LABEL_EN = { critical:'critical', major:'major', minor:'minor', warning:'warning', indeterminate:'indeterminate', cleared:'cleared' };
+  const SEV_VAR = { critical:'--sev-critical', major:'--sev-major', minor:'--sev-minor', warning:'--sev-warning', indeterminate:'--sev-indeterminate', cleared:'--ok' };
+
+  let DATA = { meta:{count:0,begin:'',end:''}, alarms: [] };
+  let connectionError = null;
+
+  let state = {
+    search: '', severity: 'all', type: 'all', alarmName: 'all',
+    sort: 'recent', selectedId: null
+  };
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function sevKey(s){
+    const k = String(s||'').trim().toLowerCase();
+    return SEV_ORDER.hasOwnProperty(k) ? k : 'indeterminate';
+  }
+  function sevLabel(s){ const k=sevKey(s); return SEV_LABEL_EN[k] || (s||'\u2013\u2013'); }
+  function sevVar(s){ const k=sevKey(s); return 'var(' + (SEV_VAR[k]||'--sev-indeterminate') + ')'; }
+  function sevVarBg(s){ const k=sevKey(s); return 'var(' + (SEV_VAR[k]||'--sev-indeterminate') + '-bg)'; }
+  function parseDurationSec(s){
+    if (!s) return 0;
+    const str = String(s);
+    let total = 0;
+    const h = str.match(/(\d+)\s*h/); const m = str.match(/(\d+)\s*min/); const sec = str.match(/(\d+)\s*s(?!e)/);
+    if (h) total += parseInt(h[1],10)*3600;
+    if (m) total += parseInt(m[1],10)*60;
+    if (sec) total += parseInt(sec[1],10);
+    return total;
+  }
+  function fmtTime(t){
+    if (!t) return '\u2013\u2013';
+    return String(t).replace('T',' ').slice(0,16);
+  }
+  function fmtDateShort(d){
+    const parts = d.split('-');
+    return parts.length===3 ? parts[1]+'/'+parts[2] : d;
+  }
+
+  function parseRows(rows){
+    const meCounts = {};
+    rows.forEach(function(r){ const me=r['me_name']; if(me) meCounts[me]=(meCounts[me]||0)+1; });
+
+    const alarms = rows.map(function(r){
+      const me = r['me_name']||'';
+      return {
+        id: String(r['alarm_id']||''), me: me, ip: r['me_ip']||'',
+        type: me.split('_')[0]||'?',
+        code: r['alarm_code'], name: r['alarm_code_name']||'\u2013\u2013',
+        severity: sevKey(r['alarm_severity']), severityRaw: r['alarm_severity']||'',
+        occurrence: r['occurrence_time']||'', clear: r['clear_time']||null,
+        duration: r['duration_time']||'', durationSec: parseDurationSec(r['duration_time']),
+        active: !r['clear_time'],
+        meCount: meCounts[me]||1
+      };
+    });
+
+    let begin=null, end=null;
+    alarms.forEach(function(a){
+      if (a.occurrence){ if(begin===null||a.occurrence<begin) begin=a.occurrence; if(end===null||a.occurrence>end) end=a.occurrence; }
+    });
+
+    return { meta:{ count: alarms.length, begin: begin||'', end: end||'' }, alarms: alarms };
+  }
+
+  function renderConnectionNote(ok, message){
+    const dot = document.getElementById('syncDot');
+    const note = document.getElementById('sourceNote');
+    if (ok){
+      dot.classList.remove('is-fallback');
+      note.classList.remove('is-fallback');
+      note.textContent = ' Live Database Connected (fm-history)';
+    } else {
+      dot.classList.add('is-fallback');
+      note.classList.add('is-fallback');
+      note.textContent = '\u26a0 ' + (message || 'Failed to connect to database');
+    }
+  }
+
+  function renderSyncInfo(){
+    const el = document.getElementById('syncText');
+    const m = DATA.meta;
+    if (!m.begin){ el.textContent = 'No data available'; return; }
+    el.textContent = fmtTime(m.begin) + ' \u2013 ' + fmtTime(m.end) + ' \u00b7 ' + DATA.alarms.length + ' alarms';
+  }
+
+  function alarmCardHtml(a){
+    return '<div class="alarm-card" data-id="' + esc(a.id) + '">' +
+      '<span class="alarm-card-sev" style="background:' + sevVar(a.severity) + '"></span>' +
+      '<div class="alarm-card-main">' +
+        '<div class="alarm-card-name">' + esc(a.name) + '</div>' +
+        '<div class="alarm-card-me">' + esc(a.me) + (a.meCount>1 ? '<span class="repeat-badge">Repeat \u00d7' + a.meCount + '</span>' : '') + '</div>' +
+      '</div>' +
+      '<div class="alarm-card-meta">' +
+        '<span class="active-pill active-pill--' + (a.active?'active':'cleared') + '">' + (a.active?'Active':'Cleared') + '</span>' +
+        '<div class="alarm-card-time-block"><div class="alarm-card-time">' + fmtTime(a.occurrence) + '</div>' +
+          '<div class="alarm-card-dur">' + esc(a.duration||'\u2013\u2013') + '</div></div>' +
+      '</div></div>';
+  }
+
+  function renderLiveBanner(){
+    const banner = document.getElementById('liveBanner');
+    const active = DATA.alarms.filter(function(a){ return a.active; })
+      .sort(function(a,b){ return (SEV_ORDER[b.severity]-SEV_ORDER[a.severity]) || String(b.occurrence).localeCompare(String(a.occurrence)); });
+
+    if (!active.length){
+      banner.className = 'live-banner live-banner--ok';
+      banner.innerHTML =
+        '<div class="live-banner-head"><span class="live-banner-title">There are no pending alarms at the moment.</span></div>' +
+        '<div class="live-banner-sub" style="margin-bottom:0">All systems operating normally based on the latest sync data.</div>';
+      return;
+    }
+
+    const count = active.length;
+    const alarmText = count === 1 ? 'active alarm' : 'active alarms';
+
+    banner.className = 'live-banner live-banner--active';
+    banner.innerHTML =
+      '<div class="live-banner-head"><span class="live-banner-pulse" aria-hidden="true"></span>' +
+      '<span class="live-banner-title">' + count + ' ' + alarmText + '</span></div>' +
+      '<div class="live-banner-sub">Uncleared alarms requiring immediate inspection</div>' +
+      '<div class="live-alarm-list">' + active.map(alarmCardHtml).join('') + '</div>';
+
+    banner.querySelectorAll('.alarm-card').forEach(function(card){
+      card.addEventListener('click', function(){ openDetail(card.dataset.id); });
+    });
+  }
+
+  function renderTimeline(){
+    const barsEl = document.getElementById('timelineBars');
+    const labelsEl = document.getElementById('timelineLabels');
+    const legendEl = document.getElementById('timelineLegend');
+    const alarms = DATA.alarms;
+
+    legendEl.innerHTML = SEVERITIES.map(function(k){
+      return '<span class="timeline-legend-item"><span class="timeline-legend-dot" style="background:' + sevVar(k) + '"></span>' + sevLabel(k) + '</span>';
+    }).join('');
+
+    if (!alarms.length){ barsEl.innerHTML=''; labelsEl.innerHTML=''; return; }
+
+    const buckets = {};
+    alarms.forEach(function(a){
+      if (!a.occurrence) return;
+      const day = String(a.occurrence).slice(0,10);
+      if (!buckets[day]) buckets[day] = { critical:0, major:0, minor:0, warning:0, indeterminate:0, total:0 };
+      buckets[day][a.severity] = (buckets[day][a.severity]||0)+1;
+      buckets[day].total++;
+    });
+    const days = Object.keys(buckets).sort();
+    const maxTotal = Math.max.apply(null, days.map(function(d){ return buckets[d].total; }).concat([1]));
+
+    barsEl.innerHTML = days.map(function(day){
+      const b = buckets[day];
+      const segs = SEVERITIES.map(function(k){
+        if (!b[k]) return '';
+        const pct = (b[k]/maxTotal*100);
+        return '<div class="timeline-seg" style="height:' + pct + '%; background:' + sevVar(k) + '"></div>';
+      }).join('');
+      return '<div class="timeline-bar-col" data-day="' + day + '" style="height:' + Math.max((b.total/maxTotal*100),3) + '%">' + segs + '</div>';
+    }).join('');
+
+    labelsEl.innerHTML = days.map(function(day){
+      return '<span class="timeline-label">' + fmtDateShort(day) + '</span>';
+    }).join('');
+
+    const tooltip = document.getElementById('cardTooltip');
+    barsEl.querySelectorAll('.timeline-bar-col').forEach(function(col){
+      col.addEventListener('mouseenter', function(){
+        const day = this.dataset.day;
+        const b = buckets[day];
+        let html = '<div class="tooltip-date">' + day + ' \u00b7 ' + b.total + ' alarms</div>';
+        SEVERITIES.forEach(function(k){
+          if (b[k]) html += '<div class="tooltip-row"><span class="tooltip-dot" style="background:' + sevVar(k) + '"></span>' + sevLabel(k) + ': ' + b[k] + '</div>';
+        });
+        tooltip.innerHTML = html;
+        const rect = this.getBoundingClientRect();
+        tooltip.style.left = (rect.left + rect.width/2) + 'px';
+        tooltip.style.top = rect.top + 'px';
+        tooltip.classList.add('is-visible');
+      });
+      col.addEventListener('mouseleave', function(){ tooltip.classList.remove('is-visible'); });
+    });
+  }
+
+  function renderHero(){
+    const al = DATA.alarms;
+    const total = al.length;
+    const critical = al.filter(function(a){return a.severity==='critical';}).length;
+    const major = al.filter(function(a){return a.severity==='major';}).length;
+    const repeatMe = new Set(al.filter(function(a){return a.meCount>1;}).map(function(a){return a.me;})).size;
+    const tiles = [
+      {label:'Total Alarms', value:String(total), cls:''},
+      {label:'Critical', value:String(critical), cls:'stat-tile--critical'},
+      {label:'Major', value:String(major), cls:'stat-tile--major'},
+      {label:'Repeated MEs', value:String(repeatMe), cls:''}
+    ];
+    document.getElementById('heroStats').innerHTML = tiles.map(function(t){
+      return '<div class="stat-tile ' + t.cls + '"><div class="stat-value">' + t.value + '</div><div class="stat-label">' + t.label + '</div></div>';
+    }).join('');
+  }
+
+  function renderChips(){
+    const al = DATA.alarms;
+    const sevCounts = {all: al.length};
+    SEVERITIES.forEach(function(k){ sevCounts[k]=0; });
+    al.forEach(function(a){ sevCounts[a.severity]=(sevCounts[a.severity]||0)+1; });
+    document.getElementById('sevChips').innerHTML =
+      '<span class="chip-group-label">Severity</span>' +
+      '<button class="chip ' + (state.severity==='all'?'is-active':'') + '" data-severity="all">' +
+        'All <span class="chip-count">' + sevCounts.all + '</span></button>' +
+      SEVERITIES.map(function(key){
+        return '<button class="chip ' + (state.severity===key?'is-active':'') + '" data-severity="' + key + '">' +
+          '<span class="chip-dot" style="background:' + sevVar(key) + '"></span>' +
+          sevLabel(key) + ' <span class="chip-count">' + sevCounts[key] + '</span></button>';
+      }).join('');
+
+    const typeCounts = {all: al.length};
+    al.forEach(function(a){ typeCounts[a.type]=(typeCounts[a.type]||0)+1; });
+    const types = Array.from(new Set(al.map(function(a){return a.type;}))).sort();
+    document.getElementById('typeChips').innerHTML =
+      '<span class="chip-group-label">Type</span>' +
+      ['all'].concat(types).map(function(key){
+        return '<button class="chip ' + (state.type===key?'is-active':'') + '" data-type="' + key + '">' +
+          (key==='all' ? 'All' : key) + ' <span class="chip-count">' + (typeCounts[key]||0) + '</span></button>';
+      }).join('');
+
+    const names = Array.from(new Set(al.map(function(a){return a.name;}))).sort();
+    const sel = document.getElementById('alarmNameSelect');
+    const prev = state.alarmName;
+    sel.innerHTML = '<option value="all">All Alarm Types</option>' +
+      names.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join('');
+    sel.value = names.indexOf(prev)>=0 ? prev : 'all';
+
+    document.querySelectorAll('#sevChips .chip').forEach(function(b){
+      b.addEventListener('click', function(){ state.severity=b.dataset.severity; renderAll(); });
+    });
+    document.querySelectorAll('#typeChips .chip').forEach(function(b){
+      b.addEventListener('click', function(){ state.type=b.dataset.type; renderAll(); });
+    });
+  }
+
+  function renderDatalist(){
+    const seen = {};
+    const opts = [];
+    DATA.alarms.forEach(function(a){
+      if (!seen[a.me]){ seen[a.me]=1; opts.push('<option value="'+esc(a.me)+'"></option>'); }
+    });
+    document.getElementById('meList').innerHTML = opts.join('');
+  }
+
+  function getFilteredHistory(){
+    // history feed = cleared alarms only; active ones live in the banner above
+    let rows = DATA.alarms.filter(function(a){
+      if (a.active) return false;
+      if (state.severity!=='all' && a.severity!==state.severity) return false;
+      if (state.type!=='all' && a.type!==state.type) return false;
+      if (state.alarmName!=='all' && a.name!==state.alarmName) return false;
+      if (state.search){
+        const q = state.search.toLowerCase();
+        if (a.me.toLowerCase().indexOf(q)===-1 && a.id.toLowerCase().indexOf(q)===-1) return false;
+      }
+      return true;
+    });
+    rows.sort(function(a,b){
+      if (state.sort==='oldest') return String(a.occurrence).localeCompare(String(b.occurrence));
+      if (state.sort==='duration') return b.durationSec - a.durationSec;
+      return String(b.occurrence).localeCompare(String(a.occurrence));
+    });
+    return rows;
+  }
+
+  function renderFeed(){
+    const rows = getFilteredHistory();
+    const feed = document.getElementById('alarmFeed');
+    const empty = document.getElementById('emptyState');
+
+    if (!rows.length){
+      feed.innerHTML = '';
+      empty.style.display = 'block';
+      const titleEl = empty.querySelector('.empty-state-title');
+      const subEl = empty.querySelector('.empty-state-sub');
+      if (connectionError){
+        titleEl.textContent = 'Database connection failed';
+        subEl.textContent = connectionError;
+      } else if (DATA.alarms.length === 0){
+        titleEl.textContent = 'No data found in fm-history table';
+        subEl.textContent = 'Try uploading an fm-history file using the "Import New File" button';
+      } else {
+        titleEl.textContent = 'No alarm history matches the selected criteria';
+        subEl.textContent = 'Try adjusting your search query or click "Clear Filters"';
+      }
+      return;
+    }
+    empty.style.display = 'none';
+
+    const bySeverity = {};
+    rows.forEach(function(a){ (bySeverity[a.severity] = bySeverity[a.severity]||[]).push(a); });
+    const sectionOrder = SEVERITIES.concat(['cleared']).filter(function(k){ return bySeverity[k] && bySeverity[k].length; });
+
+    feed.innerHTML = sectionOrder.map(function(sevKeyName){
+      const items = bySeverity[sevKeyName];
+      return '<div class="severity-section">' +
+        '<div class="severity-section-head">' +
+          '<span class="severity-section-dot" style="background:' + sevVar(sevKeyName) + '"></span>' +
+          '<span class="severity-section-title">' + sevLabel(sevKeyName) + '</span>' +
+          '<span class="severity-section-count">' + items.length + ' alarms</span>' +
+          '<span class="severity-section-line"></span>' +
+        '</div>' +
+        items.map(alarmCardHtml).join('') +
+      '</div>';
+    }).join('');
+
+    feed.querySelectorAll('.alarm-card').forEach(function(card){
+      card.addEventListener('click', function(){ openDetail(card.dataset.id); });
+    });
+  }
+
+  function renderAll(){
+    renderLiveBanner();
+    renderTimeline();
+    renderHero();
+    renderChips();
+    renderDatalist();
+    renderFeed();
+    renderSyncInfo();
+  }
+
+  function openDetail(id){
+    const a = DATA.alarms.find(function(x){ return x.id===id; });
+    if (!a) return;
+    state.selectedId = id;
+    document.getElementById('detailAlarmName').textContent = a.name;
+    document.getElementById('detailMe').textContent = a.me;
+    document.getElementById('detailBadges').innerHTML =
+      '<span class="sev-badge" style="background:' + sevVarBg(a.severity) + '; color:' + sevVar(a.severity) + '">' + sevLabel(a.severity) + '</span>' +
+      '<span class="active-pill active-pill--' + (a.active?'active':'cleared') + '">' + (a.active?'Active':'Cleared') + '</span>' +
+      '<span class="badge">' + a.type + '</span>';
+
+    const fields = [
+      ['Alarm ID', a.id], ['Alarm Code', a.code!=null?String(a.code):'\u2013\u2013'],
+      ['Occurrence Time', fmtTime(a.occurrence)],
+      ['Clear Time', a.clear?fmtTime(a.clear):'\u2013\u2013 (Active)'],
+      ['Duration', a.duration||'\u2013\u2013'],
+      ['Source Severity', a.severityRaw||'\u2013\u2013']
+    ];
+    const fieldsHtml = '<div class="field-grid">' + fields.map(function(f){
+      return '<div class="field-item"><div class="field-label">' + f[0] + '</div><div class="field-value">' + esc(f[1]) + '</div></div>';
+    }).join('') + '</div>';
+
+    const related = DATA.alarms.filter(function(x){ return x.me===a.me && x.id!==a.id; })
+      .sort(function(x,y){ return String(y.occurrence).localeCompare(String(x.occurrence)); }).slice(0,8);
+    const relatedHtml = related.length
+      ? '<div class="related-title">Other alarms for ' + esc(a.me) + ' (' + related.length + (related.length>=8?'+':'') + ')</div>' +
+        related.map(function(x){
+          return '<div class="related-row"><span class="chip-dot" style="background:' + sevVar(x.severity) + '"></span>' +
+            '<span style="flex:1;padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(x.name) + '</span>' +
+            '<span class="alarm-card-time">' + fmtTime(x.occurrence) + '</span></div>';
+        }).join('')
+      : '';
+
+    document.getElementById('detailBody').innerHTML = fieldsHtml + relatedHtml +
+      '<div class="detail-footnote">This view displays only the 9 fields stored in the database according to fast.py, out of 70 total columns in the raw file (e.g., Ack State, Position, and Related ME are omitted).</div>';
+
+    document.getElementById('backdrop').classList.add('is-open');
+    document.getElementById('detailPanel').classList.add('is-open');
+    document.getElementById('detailClose').focus();
+  }
+
+  function closeDetail(){
+    document.getElementById('backdrop').classList.remove('is-open');
+    document.getElementById('detailPanel').classList.remove('is-open');
+    document.getElementById('cardTooltip').classList.remove('is-visible');
+  }
+
+  function showUploadMsg(msg, ok){
+    const el = document.getElementById('uploadStatus');
+    el.textContent = msg;
+    el.className = 'upload-status ' + (ok?'ok':'err');
+    if (ok) setTimeout(function(){ if (el.textContent===msg) el.textContent=''; }, 6000);
+  }
+
+  async function fetchAllData(){
+    connectionError = null;
+    try{
+      const res = await fetch('http://localhost:8000/api/data?table_name=fm-history');
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length){
+        DATA = parseRows(json.data);
+        renderConnectionNote(true);
+      } else {
+        DATA = { meta:{count:0,begin:'',end:''}, alarms: [] };
+        connectionError = (json && json.message) ? json.message : 'No data found in fm-history table';
+        renderConnectionNote(false, connectionError);
+      }
+    }catch(err){
+      console.error('fetchAllData: cannot reach backend', err);
+      DATA = { meta:{count:0,begin:'',end:''}, alarms: [] };
+      connectionError = 'Cannot connect to backend server (localhost:8000). Please verify if uvicorn is running and CORS is properly configured.';
+      renderConnectionNote(false, connectionError);
+    }
+    state.selectedId=null; state.severity='all'; state.type='all'; state.alarmName='all'; state.search='';
+    const si = document.getElementById('searchInput'); if (si) si.value='';
+    const asel = document.getElementById('alarmNameSelect'); if (asel) asel.value='all';
+    renderAll();
+  }
+
+  function initUpload(){
+    const btn = document.getElementById('uploadBtn');
+    const input = document.getElementById('fileInput');
+    btn.addEventListener('click', function(){ input.click(); });
+    input.addEventListener('change', async function(){
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      showUploadMsg('Uploading and processing file...', true);
+      try{
+        const res = await fetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
+        const data = await res.json();
+        if (data && data.status === 'success'){
+          showUploadMsg(data.message || 'Import successful', true);
+          fetchAllData();
+        } else {
+          showUploadMsg('Error: ' + ((data && data.message) || '-'), false);
+        }
+      }catch(err){
+        console.error(err);
+        showUploadMsg('Upload failed. Unable to connect to server.', false);
+      }
+    });
+  }
+
+  function init(){
+    fetchAllData();
+
+    document.getElementById('sortSelect').addEventListener('change', function(e){
+      state.sort = e.target.value; renderFeed();
+    });
+    document.getElementById('alarmNameSelect').addEventListener('change', function(e){
+      state.alarmName = e.target.value; renderFeed();
+    });
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('input', function(){
+      state.search = searchInput.value.trim();
+      renderFeed();
+    });
+    document.getElementById('clearBtn').addEventListener('click', function(){
+      state.search=''; state.severity='all'; state.type='all'; state.alarmName='all';
+      searchInput.value='';
+      renderAll();
+    });
+    document.getElementById('detailClose').addEventListener('click', closeDetail);
+    document.getElementById('backdrop').addEventListener('click', closeDetail);
+    document.addEventListener('keydown', function(e){ if (e.key==='Escape') closeDetail(); });
+    initUpload();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+<!-- Background Overlay -->
+<div class="side-nav-overlay" id="sideNavOverlay" onclick="toggleSideNav()"></div>
+
+<!-- ตัวแถบเมนูด้านข้าง -->
+<nav class="side-nav-container" id="sideNavContainer">
+  <div class="side-nav-header">
+    <h2 class="side-nav-title">NEM System</h2>
+    <button class="side-nav-close" onclick="toggleSideNav()">✕</button>
+  </div>
+  
+  <ul class="side-nav-menu">
+     <li class="side-nav-item">
+      <a href="index.html" class="side-nav-link">Home</a>
+     </li>
+    
+    <li class="side-nav-item">
+      <a href="CPU.html" class="side-nav-link">CPU&RAM</a>
+    </li>
+
+    <li class="side-nav-item">
+      <a href="MSU.html" class="side-nav-link">Laser Pump</a>
+    </li>
+
+    <li class="side-nav-item">
+      <a href="OSC.html" class="side-nav-link">Fiber Flapping</a>
+    </li>
+
+    <li class="side-nav-item">
+      <a href="FAN.html" class="side-nav-link">Fan</a>
+    </li>
+
+    <li class="side-nav-item">
+      <a href="LineCard.html" class="side-nav-link">Line Card</a>
+    </li>
+
+    <li class="side-nav-item">
+      <a href="ClientCard.html" class="side-nav-link">Client Card</a>
+    </li>
+
+    <!-- เมนูเดี่ยว 1 -->
+
+    
+    <!-- เมนูแบบซ้อนได้ (Dropdown) -->
+    <!-- <li class="side-nav-item">
+      <button class="side-nav-submenu-btn" onclick="toggleSubMenu('submenu1', this)">
+        <span>Performance History</span>
+        <span class="side-nav-arrow">▼</span>
+      </button>
+      <ul class="side-nav-submenu" id="submenu1">
+        <li><a href="daily-report.html" class="side-nav-link">Daily Report</a></li>
+        <li><a href="weekly-report.html" class="side-nav-link">Weekly Report</a></li>
+      </ul>
+    </li>
+
+    <li class="side-nav-item">
+      <button class="side-nav-submenu-btn" onclick="toggleSubMenu('submenu2', this)">
+        <span>Settings</span>
+        <span class="side-nav-arrow">▼</span>
+      </button>
+      <ul class="side-nav-submenu" id="submenu2">
+        <li><a href="user-management.html" class="side-nav-link">User Management</a></li>
+        <li><a href="api-config.html" class="side-nav-link">API Config</a></li>
+      </ul>
+    </li> -->
+  </ul>
+</nav>
+
+<script>
+  function toggleSideNav() {
+    document.getElementById('sideNavContainer').classList.toggle('is-active');
+    document.getElementById('sideNavOverlay').classList.toggle('is-active');
+  }
+
+  function toggleSubMenu(submenuId, btnElement) {
+    var submenu = document.getElementById(submenuId);
+    submenu.classList.toggle('is-open');
+    btnElement.classList.toggle('is-open');
+  }
+</script>
+</html>

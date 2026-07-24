@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Network Elements Monitoring | ภาพรวม</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --bg: #0A0E14;
+  --panel: #121821;
+  --panel-2: #171F2A;
+  --panel-3: #1C2531;
+  --border: #232D3A;
+  --border-soft: #1A2330;
+  --text: #E7EDF4;
+  --text-dim: #8996A6;
+  --text-faint: #55616F;
+  --accent: #34D6BE;
+  --accent-dim: #1E8577;
+  --accent-bg: rgba(52,214,190,0.10);
+  --ok: #3ECF8E;
+  --ok-bg: rgba(62,207,142,0.13);
+  --warn: #F2B94A;
+  --warn-bg: rgba(242,185,74,0.13);
+  --crit: #F2585F;
+  --crit-bg: rgba(242,88,95,0.15);
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  --font-body: -apple-system, 'Segoe UI', ui-sans-serif, system-ui, Roboto, sans-serif;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+*{ box-sizing: border-box; }
+html{ background: var(--bg); }
+body{
+  margin:0;
+  background:
+    radial-gradient(1100px 500px at 15% -10%, rgba(52,214,190,0.07), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(52,214,190,0.04), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+::selection{ background: var(--accent); color: var(--bg); }
+:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.shell{ max-width: 1280px; margin: 0 auto; padding: 28px 24px 64px; }
+
+.header{ display:flex; align-items:center; gap:14px; margin-bottom:8px; }
+.brand-icon{ flex:none; display:flex; align-items:end; }
+.brand-icon svg rect:nth-child(1){ opacity:.35; }
+.brand-icon svg rect:nth-child(2){ opacity:.6; }
+.brand-icon svg rect:nth-child(3){ opacity:.85; }
+.brand-icon svg rect:nth-child(4){ opacity:1; }
+.brand-title{ font-family: var(--font-display); font-weight:700; font-size:24px; letter-spacing:-0.01em; margin:0; color:var(--text); }
+.brand-subtitle{ margin:24px 0 22px; font-size:13.5px; color:var(--text-dim); }
+
+.overall-strip{ display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-bottom:26px; }
+.overall-tile{ background: var(--panel); border:1px solid var(--border-soft); border-radius: var(--radius-lg); padding:16px 18px; position:relative; overflow:hidden; }
+.overall-tile::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background: var(--border); }
+.overall-tile--ok::before{ background: var(--ok); }
+.overall-tile--warn::before{ background: var(--warn); }
+.overall-tile--crit::before{ background: var(--crit); }
+.overall-value{ font-family: var(--font-mono); font-weight:700; font-size:26px; font-variant-numeric: tabular-nums; line-height:1; margin-bottom:5px; }
+.overall-tile--ok .overall-value{ color: var(--ok); }
+.overall-tile--warn .overall-value{ color: var(--warn); }
+.overall-tile--crit .overall-value{ color: var(--crit); }
+.overall-label{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color: var(--text-dim); }
+
+/* --- NEW: Health Progress Bar Styles --- */
+.health-dashboard-section {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  margin-bottom: 26px;
+}
+.health-dashboard-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15.5px;
+  color: var(--text);
+  margin: 0 0 16px 0;
+}
+.health-bar-wrapper {
+  width: 100%;
+  background: var(--panel-3);
+  border-radius: 8px;
+  height: 28px;
+  display: flex;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+}
+.health-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: #000;
+  transition: width 1.0s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.health-segment--ok { background: var(--ok); color: #083321; }
+.health-segment--warn { background: var(--warn); color: #4a3304; }
+.health-segment--crit { background: var(--crit); color: #fff; }
+
+.card-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; }
+.cat-card{ background: var(--panel); border:1px solid var(--border-soft); border-radius: var(--radius-lg); padding:20px 22px;
+  display:flex; flex-direction:column; text-decoration:none; color:inherit; transition: border-color .15s, transform .1s; position:relative; }
+.cat-card:hover{ border-color: var(--accent-dim); transform: translateY(-2px); }
+.cat-card-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.cat-icon{ width:36px; height:36px; border-radius:9px; background: var(--panel-2); display:flex; align-items:center; justify-content:center;
+  font-family: var(--font-mono); font-weight:700; font-size:14px; color: var(--accent); flex:none; }
+.cat-status-dot{ width:9px; height:9px; border-radius:50%; margin-top:4px; }
+.cat-status-dot--ok{ background: var(--ok); box-shadow:0 0 0 3px var(--ok-bg); }
+.cat-status-dot--warn{ background: var(--warn); box-shadow:0 0 0 3px var(--warn-bg); }
+.cat-status-dot--crit{ background: var(--crit); box-shadow:0 0 0 3px var(--crit-bg); }
+.cat-status-dot--loading{ background: var(--text-faint); animation: blink 1.2s infinite; }
+.cat-status-dot--err{ background: var(--text-faint); }
+@keyframes blink{ 0%,100%{opacity:1;} 50%{opacity:.3;} }
+.cat-title{ font-family: var(--font-display); font-weight:600; font-size:15.5px; color: var(--text); margin-bottom:4px; }
+.cat-desc{ font-size:12px; color: var(--text-dim); margin-bottom:16px; line-height:1.5; min-height:36px; }
+.cat-stats{ display:flex; gap:14px; margin-bottom:14px; font-family: var(--font-mono); }
+.cat-stat-val{ font-size:19px; font-weight:700; line-height:1; }
+.cat-stat--ok .cat-stat-val{ color: var(--ok); }
+.cat-stat--warn .cat-stat-val{ color: var(--warn); }
+.cat-stat--crit .cat-stat-val{ color: var(--crit); }
+.cat-stat-label{ font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); margin-top:3px; }
+.cat-loading{ font-size:12px; color: var(--text-faint); font-family: var(--font-mono); margin-bottom:14px; }
+.cat-err{ font-size:11.5px; color: var(--text-faint); margin-bottom:14px; line-height:1.5; }
+.cat-footer{ margin-top:auto; display:flex; align-items:center; justify-content:space-between; padding-top:14px; border-top:1px solid var(--border-soft); }
+.cat-link{ font-size:12.5px; font-weight:600; color: var(--accent); display:flex; align-items:center; gap:5px; }
+.cat-table{ font-family: var(--font-mono); font-size:10.5px; color: var(--text-faint); }
+
+footer.page-footer{ margin-top:26px; text-align:center; font-size:12px; color: var(--text-faint); line-height:1.7; }
+footer.page-footer code{ color: var(--text-dim); }
+
+@media (max-width: 980px){
+  .card-grid{ grid-template-columns: repeat(2, 1fr); }
+  .overall-strip{ grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px){
+  .card-grid{ grid-template-columns: 1fr; }
+  .shell{ padding:18px 14px 48px; }
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition-duration:0.01ms !important; animation-duration:0.01ms !important; animation:none !important; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="header">
+    <span class="brand-icon" aria-hidden="true">
+      <svg width="34" height="24" viewBox="0 0 28 20" fill="var(--accent)">
+        <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
+        <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
+        <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
+        <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
+      </svg>
+    </span>
+    <p class="brand-title">Network Elements Monitoring</p>
+  </div>
+  <p class="brand-subtitle">ภาพรวมทุกด้านของเครือข่าย — คลิกการ์ดเพื่อดูรายละเอียดแต่ละส่วน</p>
+
+  <div class="overall-strip" id="overallStrip"></div>
+
+  <!-- NEW: Health Dashboard Section -->
+  <div class="health-dashboard-section">
+    <h3 class="health-dashboard-title">Network Elements Health Status (All Categories)</h3>
+    <div class="health-bar-wrapper">
+      <div id="health-ok" class="health-segment health-segment--ok" style="width: 0%;"></div>
+      <div id="health-warn" class="health-segment health-segment--warn" style="width: 0%;"></div>
+      <div id="health-crit" class="health-segment health-segment--crit" style="width: 0%;"></div>
+    </div>
+    <div id="health-empty" style="text-align:center; font-size:12px; color:var(--text-faint); margin-top:10px;">กำลังคำนวณและดึงข้อมูลอุปกรณ์...</div>
+  </div>
+
+  <div class="card-grid" id="cardGrid"></div>
+
+  <footer class="page-footer">
+    แต่ละการ์ดดึงข้อมูลจาก <code>/api/data</code> ของตัวเองแยกกัน (ตารางที่ต่างกัน) ถ้าการ์ดไหนขึ้น "เชื่อมต่อไม่ได้"<br>
+    ให้ตรวจสอบว่า uvicorn รันอยู่และตารางนั้นมีข้อมูลในฐานข้อมูลแล้ว &mdash; หน้านี้ไม่ได้แก้ไขไฟล์เดิมของแต่ละหน้า
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // 1. เพิ่ม API_BASE เพื่อความยืดหยุ่นระหว่าง localhost กับ Server จริง
+  const API_BASE = 'http://127.0.0.1:8000';
+
+  function num(v){ const n = typeof v==='number'?v:parseFloat(v); return isNaN(n)?0:n; }
+  function toNumOrNull(v){
+    if (v===null||v===undefined) return null;
+    if (typeof v==='number') return isNaN(v)?null:v;
+    const s = String(v).trim();
+    if (s===''||s==='--') return null;
+    const n = parseFloat(s);
+    return isNaN(n)?null:n;
+  }
+  function median(arr){
+    if (!arr || !arr.length) return 0;
+    const s = arr.slice().sort(function(a,b){return a-b;});
+    const m = Math.floor(s.length/2);
+    return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
+  }
+  function groupBy(rows, keyFn){
+    const g = {};
+    if (!rows) return g;
+    rows.forEach(function(r){ const k=keyFn(r); if(!g[k]) g[k]=[]; g[k].push(r); });
+    return g;
+  }
+  
+  // 2. ดักเคส Array ว่างเพื่อกันพังตอนไม่มีข้อมูลล่าสุด
+  function latestPeriodOnly(rows, timeField){
+    if (!rows || !rows.length) return [];
+    let latest = rows[0][timeField];
+    rows.forEach(function(r){ if (String(r[timeField]) > String(latest)) latest = r[timeField]; });
+    return rows.filter(function(r){ return r[timeField]===latest; });
+  }
+  function boardTypeOf(mo){
+    const m = String(mo).match(/^([^\[]+)/);
+    return m ? m[1] : 'OTHER';
+  }
+
+  /* ---- summarizers: mirror each dashboard's real threshold logic ---- */
+
+  function summarizeCpu(rowsIn){
+    const rows = latestPeriodOnly(rowsIn, 'begin_time');
+    const byMe = groupBy(rows, function(r){ return r.me_name+'|'+r.me_ip; });
+    let normal=0,warning=0,critical=0;
+    Object.keys(byMe).forEach(function(k){
+      const g = byMe[k];
+      let worst = 0;
+      g.forEach(function(r){ worst = Math.max(worst, num(r.cpu_avg_ratio)*100, num(r.ram_avg_ratio)*100); });
+      if (worst>=45) critical++; else if (worst>=30) warning++; else normal++;
+    });
+    return { total: Object.keys(byMe).length, normal:normal, warning:warning, critical:critical };
+  }
+
+  function summarizeFan(rowsIn){
+    const rows = latestPeriodOnly(rowsIn, 'begin_time');
+    const byBoard = groupBy(rows, function(r){ return boardTypeOf(r.measure_object); });
+    const baseline = {};
+    Object.keys(byBoard).forEach(function(k){ baseline[k] = median(byBoard[k].map(function(r){return num(r.fan_speed);})) || 1; });
+    const byMe = groupBy(rows, function(r){ return r.me_name+'|'+r.me_ip; });
+    let normal=0,warning=0,critical=0;
+    Object.keys(byMe).forEach(function(k){
+      let worstRatio=0, worstVal=0;
+      byMe[k].forEach(function(r){
+        const bt = boardTypeOf(r.measure_object);
+        const v = num(r.fan_speed);
+        const ratio = v/(baseline[bt]||1);
+        if (ratio>worstRatio){ worstRatio=ratio; worstVal=v; }
+      });
+      if (worstRatio>=1.8 || worstVal<15) critical++; else if (worstRatio>=1.3) warning++; else normal++;
+    });
+    return { total: Object.keys(byMe).length, normal:normal, warning:warning, critical:critical };
+  }
+
+  // 3. ป้องกันบั๊ก Infinity / NaN ในสมการ Variance ตอนมีชุดข้อมูลเดียว
+  function summarizeOsc(rowsIn){
+    if (!rowsIn || !rowsIn.length) return { total: 0, normal: 0, warning: 0, critical: 0 };
+    const byLink = groupBy(rowsIn, function(r){ return r.me_name+'|'+r.me_ip+'|'+r.measure_object; });
+    const linkStats = Object.keys(byLink).map(function(k){
+      const vals = byLink[k].map(function(r){ return num(r.input_power); });
+      const mean = vals.length ? vals.reduce(function(s,v){return s+v;},0)/vals.length : 0;
+      const variance = vals.length>1 ? vals.reduce(function(s,v){return s+(v-mean)*(v-mean);},0)/(vals.length-1) : 0;
+      const std = Math.sqrt(variance) || 0;
+      const maxVal = vals.length ? Math.max.apply(null, vals) : 0;
+      const minVal = vals.length ? Math.min.apply(null, vals) : 0;
+      const range = maxVal - minVal;
+      const parts = k.split('|');
+      let status='normal';
+      if (range>=15 || std>=3) status='critical';
+      else if (range<5 && mean<=-45) status='critical';
+      else if (range>=5 || std>=1) status='warning';
+      return { me: parts[0]+'|'+parts[1], status: status };
+    });
+    const byMe = groupBy(linkStats, function(x){ return x.me; });
+    const sev = {critical:2,warning:1,normal:0};
+    let normal=0,warning=0,critical=0;
+    Object.keys(byMe).forEach(function(k){
+      let worst='normal';
+      byMe[k].forEach(function(x){ if (sev[x.status]>sev[worst]) worst=x.status; });
+      if (worst==='critical') critical++; else if (worst==='warning') warning++; else normal++;
+    });
+    return { total: Object.keys(byMe).length, normal:normal, warning:warning, critical:critical };
+  }
+
+  function summarizeMsu(rowsIn){
+    const rows = latestPeriodOnly(rowsIn, 'begin_time');
+    const active = rows.map(function(r){return num(r.laser_current);}).filter(function(v){return v>0;});
+    const baseline = median(active) || 1;
+    const byMe = groupBy(rows, function(r){ return r.me_name+'|'+r.me_ip; });
+    let normal=0,warning=0,critical=0;
+    Object.keys(byMe).forEach(function(k){
+      let worst=0, any=false;
+      byMe[k].forEach(function(r){
+        const v = num(r.laser_current);
+        if (v<=0) return;
+        any=true;
+        worst = Math.max(worst, v/baseline);
+      });
+      if (!any){ normal++; return; }
+      if (worst>=2.0) critical++; else if (worst>=1.6) warning++; else normal++;
+    });
+    return { total: Object.keys(byMe).length, normal:normal, warning:warning, critical:critical };
+  }
+
+  function summarizeClientCard(rowsIn){
+    const rows = latestPeriodOnly(rowsIn, 'begin_time');
+    const FLOOR=-45, WARN=5, CRIT=9;
+    const byType = groupBy(rows, function(r){ return boardTypeOf(r.measure_object); });
+    const inBase={}, outBase={};
+    Object.keys(byType).forEach(function(k){
+      const ins = byType[k].map(function(r){return toNumOrNull(r.input_power);}).filter(function(v){return v!==null&&v>FLOOR;});
+      const outs = byType[k].map(function(r){return toNumOrNull(r.output_power);}).filter(function(v){return v!==null&&v>FLOOR;});
+      inBase[k]=median(ins); outBase[k]=median(outs);
+    });
+    const byMe = groupBy(rows, function(r){ return r.me_name+'|'+r.me_ip; });
+    let normal=0,warning=0,critical=0;
+    Object.keys(byMe).forEach(function(k){
+      let worst='normal';
+      byMe[k].forEach(function(r){
+        const iv=toNumOrNull(r.input_power), ov=toNumOrNull(r.output_power);
+        if (iv===null && ov===null) return;
+        let st='normal';
+        if ((iv!==null&&iv<=FLOOR)||(ov!==null&&ov<=FLOOR)) st='critical';
+        else{
+          const ct=boardTypeOf(r.measure_object);
+          const ind = iv!==null?Math.abs(iv-(inBase[ct]||0)):0;
+          const outd = ov!==null?Math.abs(ov-(outBase[ct]||0)):0;
+          if (ind>=CRIT||outd>=CRIT) st='critical'; else if (ind>=WARN||outd>=WARN) st='warning';
+        }
+        if (st==='critical') worst='critical'; else if (st==='warning'&&worst!=='critical') worst='warning';
+      });
+      if (worst==='critical') critical++; else if (worst==='warning') warning++; else normal++;
+    });
+    return { total: Object.keys(byMe).length, normal:normal, warning:warning, critical:critical };
+  }
+
+  function summarizeLineCard(rowsIn){
+    const rows = latestPeriodOnly(rowsIn, 'begin_time');
+    const FLOOR=-45, PWARN=5, PCRIT=9, BWARN=0.001, BCRIT=0.005;
+    const byType = groupBy(rows, function(r){ return boardTypeOf(r.measure_object); });
+    const inBase={}, outBase={};
+    Object.keys(byType).forEach(function(k){
+      const ins = byType[k].map(function(r){return toNumOrNull(r.input_power);}).filter(function(v){return v!==null&&v>FLOOR;});
+      const outs = byType[k].map(function(r){return toNumOrNull(r.output_power);}).filter(function(v){return v!==null&&v>FLOOR;});
+      inBase[k]=median(ins); outBase[k]=median(outs);
+    });
+    const byMe = groupBy(rows, function(r){ return r.me_name+'|'+r.me_ip; });
+    let normal=0,warning=0,critical=0;
+    Object.keys(byMe).forEach(function(k){
+      let worst='normal';
+      byMe[k].forEach(function(r){
+        const after = toNumOrNull(r.ber_after_fec), before = toNumOrNull(r.ber_before_fec);
+        const iv = toNumOrNull(r.input_power), ov = toNumOrNull(r.output_power);
+        let st='normal';
+        if (after!==null || before!==null){
+          if (after!==null && after>0) st='critical';
+          else if (before!==null && before>=BCRIT) st='critical';
+          else if (before!==null && before>=BWARN) st='warning';
+        } else if (iv!==null || ov!==null){
+          if ((iv!==null&&iv<=FLOOR)||(ov!==null&&ov<=FLOOR)) st='critical';
+          else{
+            const ct=boardTypeOf(r.measure_object);
+            const ind = iv!==null?Math.abs(iv-(inBase[ct]||0)):0;
+            const outd = ov!==null?Math.abs(ov-(outBase[ct]||0)):0;
+            if (ind>=PCRIT||outd>=PCRIT) st='critical'; else if (ind>=PWARN||outd>=PWARN) st='warning';
+          }
+        }
+        if (st==='critical') worst='critical'; else if (st==='warning'&&worst!=='critical') worst='warning';
+      });
+      if (worst==='critical') critical++; else if (worst==='warning') warning++; else normal++;
+    });
+    return { total: Object.keys(byMe).length, normal:normal, warning:warning, critical:critical };
+  }
+
+  function summarizeAlarm(rowsIn){
+    if(!rowsIn) rowsIn = [];
+    const active = rowsIn.filter(function(r){ return !r.clear_time; }).length;
+    const critical = rowsIn.filter(function(r){ return String(r.alarm_severity||'').toLowerCase()==='critical'; }).length;
+    const uniqueMe = new Set(rowsIn.map(function(r){ return r.me_name; })).size;
+    return { total: rowsIn.length, normal: rowsIn.length-active, warning: 0, critical: active, uniqueMe: uniqueMe, isAlarm:true, criticalSev: critical };
+  }
+
+  const CATEGORIES = [
+    { key:'cpu', table:'cpu_performance', icon:'CPU', title:'CPU / RAM', desc:'\u0e01\u0e32\u0e23\u0e43\u0e0a\u0e49\u0e07\u0e32\u0e19 CPU \u0e41\u0e25\u0e30 RAM \u0e02\u0e2d\u0e07\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c', href:'CPU.html', summarize: summarizeCpu },
+    { key:'fan', table:'fan_performance', icon:'FAN', title:'\u0e04\u0e27\u0e32\u0e21\u0e40\u0e23\u0e47\u0e27\u0e1e\u0e31\u0e14\u0e25\u0e21', desc:'\u0e1e\u0e31\u0e14\u0e25\u0e21\u0e23\u0e30\u0e1a\u0e32\u0e22\u0e04\u0e27\u0e32\u0e21\u0e23\u0e49\u0e2d\u0e19\u0e02\u0e2d\u0e07\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e15\u0e48\u0e32\u0e07\u0e46', href:'FAN.html', summarize: summarizeFan },
+    { key:'osc', table:'osc_performance', icon:'OSC', title:'OSC Power Flapping', desc:'\u0e04\u0e27\u0e32\u0e21\u0e40\u0e2a\u0e16\u0e35\u0e22\u0e23\u0e02\u0e2d\u0e07\u0e01\u0e33\u0e25\u0e31\u0e07\u0e41\u0e2a\u0e07\u0e0a\u0e48\u0e2d\u0e07\u0e2a\u0e31\u0e0d\u0e0d\u0e32\u0e13 (\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e2d\u0e32\u0e08\u0e42\u0e2b\u0e25\u0e14\u0e0a\u0e49\u0e32)', href:'OSC.html', summarize: summarizeOsc },
+    { key:'msu', table:'msu_performance', icon:'MSU', title:'MSU Pump Laser', desc:'\u0e01\u0e23\u0e30\u0e41\u0e2a\u0e44\u0e1a\u0e2d\u0e31\u0e2a\u0e40\u0e25\u0e40\u0e0b\u0e2d\u0e23\u0e4c\u0e1b\u0e31\u0e4a\u0e21\u0e02\u0e22\u0e32\u0e22\u0e2a\u0e31\u0e0d\u0e0d\u0e32\u0e13', href:'MSU.html', summarize: summarizeMsu },
+    { key:'clientcard', table:'client-card_performance', icon:'CC', title:'Client Card', desc:'\u0e01\u0e33\u0e25\u0e31\u0e07\u0e41\u0e2a\u0e07\u0e1e\u0e2d\u0e23\u0e4c\u0e15\u0e1d\u0e31\u0e48\u0e07\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32', href:'ClientCard.html', summarize: summarizeClientCard },
+    { key:'linecard', table:'line-card_performance', icon:'LC', title:'Line Card', desc:'BER \u0e41\u0e25\u0e30\u0e01\u0e33\u0e25\u0e31\u0e07\u0e41\u0e2a\u0e07\u0e2a\u0e32\u0e22\u0e2a\u0e48\u0e07', href:'LineCard.html', summarize: summarizeLineCard },
+    { key:'alarm', table:'fm-history', icon:'FM', title:'Alarm History', desc:'\u0e1b\u0e23\u0e30\u0e27\u0e31\u0e15\u0e34\u0e41\u0e2d\u0e25\u0e32\u0e23\u0e4c\u0e21\u0e41\u0e25\u0e30\u0e40\u0e2b\u0e15\u0e38\u0e01\u0e32\u0e23\u0e13\u0e4c', href:'Alarm.html', summarize: summarizeAlarm }
+  ];
+
+  const results = {};
+
+  function statusClassFromCounts(s){
+    if (s.critical>0) return 'crit';
+    if (s.warning>0) return 'warn';
+    return 'ok';
+  }
+
+  function renderCard(cat, state, data, errMsg){
+    const el = document.getElementById('card-'+cat.key);
+    if (!el) return;
+    
+    let dotClass = 'cat-status-dot--loading';
+    let body = '<div class="cat-loading">\u0e01\u0e33\u0e25\u0e31\u0e07\u0e42\u0e2b\u0e25\u0e14\u2026</div>';
+
+    if (state==='error'){
+      dotClass = 'cat-status-dot--err';
+      body = '<div class="cat-err">\u26a0 \u0e40\u0e0a\u0e37\u0e48\u0e2d\u0e21\u0e15\u0e48\u0e2d\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49<br>' + (errMsg||'') + '</div>';
+    } else if (state==='ok'){
+      dotClass = 'cat-status-dot--' + statusClassFromCounts(data);
+      if (data.isAlarm){
+        body = '<div class="cat-stats">' +
+          '<div class="cat-stat cat-stat--crit"><div class="cat-stat-val">' + data.critical + '</div><div class="cat-stat-label">\u0e01\u0e33\u0e25\u0e31\u0e07\u0e40\u0e01\u0e34\u0e14</div></div>' +
+          '<div class="cat-stat"><div class="cat-stat-val" style="color:var(--text)">' + data.total + '</div><div class="cat-stat-label">\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14</div></div>' +
+          '<div class="cat-stat"><div class="cat-stat-val" style="color:var(--text-dim)">' + data.uniqueMe + '</div><div class="cat-stat-label">ME</div></div>' +
+          '</div>';
+      } else {
+        body = '<div class="cat-stats">' +
+          '<div class="cat-stat cat-stat--ok"><div class="cat-stat-val">' + data.normal + '</div><div class="cat-stat-label">\u0e1b\u0e01\u0e15\u0e34</div></div>' +
+          '<div class="cat-stat cat-stat--warn"><div class="cat-stat-val">' + data.warning + '</div><div class="cat-stat-label">\u0e40\u0e1d\u0e49\u0e32\u0e23\u0e30\u0e27\u0e31\u0e07</div></div>' +
+          '<div class="cat-stat cat-stat--crit"><div class="cat-stat-val">' + data.critical + '</div><div class="cat-stat-label">\u0e27\u0e34\u0e01\u0e24\u0e15</div></div>' +
+          '</div>';
+      }
+    }
+
+    el.querySelector('.cat-status-dot').className = 'cat-status-dot ' + dotClass;
+    el.querySelector('.cat-body').innerHTML = body;
+  }
+
+  function renderOverall(){
+    let critSum=0, warnSum=0, okCount=0, loadedCount=0;
+    
+    // ตัวแปรสำหรับคำนวณ Progress Bar รวม (ข้าม Alarm เพราะเป็น Event ไม่ใช่อุปกรณ์)
+    let totalItems=0, totalNormal=0, totalWarn=0, totalCrit=0;
+
+    CATEGORIES.forEach(function(c){
+      const r = results[c.key];
+      if (!r || r.state!=='ok') return;
+      loadedCount++;
+
+      // เก็บค่า Progress Bar ของอุปกรณ์
+      if(!r.data.isAlarm){
+         totalNormal += (r.data.normal || 0);
+         totalWarn += (r.data.warning || 0);
+         totalCrit += (r.data.critical || 0);
+         totalItems += ((r.data.normal || 0) + (r.data.warning || 0) + (r.data.critical || 0));
+      }
+
+      if (r.data.critical>0) critSum++;
+      else if (r.data.warning>0) warnSum++;
+      else okCount++;
+    });
+
+    const strip = document.getElementById('overallStrip');
+    strip.innerHTML =
+      '<div class="overall-tile '+(critSum>0?'overall-tile--crit':'')+'"><div class="overall-value">'+critSum+'</div><div class="overall-label">Critical Categories</div></div>' +
+      '<div class="overall-tile '+(warnSum>0?'overall-tile--warn':'')+'"><div class="overall-value">'+warnSum+'</div><div class="overall-label">Warning Categories</div></div>' +
+      '<div class="overall-tile '+(okCount>0?'overall-tile--ok':'')+'"><div class="overall-value">'+okCount+'</div><div class="overall-label">Healthy Categories</div></div>' +
+      '<div class="overall-tile"><div class="overall-value" style="color:var(--text)">'+loadedCount+'<span style="font-size:14px;color:var(--text-faint)">/'+CATEGORIES.length+'</span></div><div class="overall-label">Modules Loaded</div></div>';
+
+    // อัปเดตส่วน Progress Bar
+    const barOk = document.getElementById('health-ok');
+    const barWarn = document.getElementById('health-warn');
+    const barCrit = document.getElementById('health-crit');
+    const emptyMsg = document.getElementById('health-empty');
+
+    if(totalItems > 0) {
+       emptyMsg.style.display = 'none';
+       const pOk = (totalNormal / totalItems) * 100;
+       const pWarn = (totalWarn / totalItems) * 100;
+       const pCrit = (totalCrit / totalItems) * 100;
+
+       barOk.style.width = pOk + '%';
+       barOk.textContent = pOk >= 5 ? Math.round(pOk) + '%' : '';
+
+       barWarn.style.width = pWarn + '%';
+       barWarn.textContent = pWarn >= 5 ? Math.round(pWarn) + '%' : '';
+
+       barCrit.style.width = pCrit + '%';
+       barCrit.textContent = pCrit >= 5 ? Math.round(pCrit) + '%' : '';
+    } else if (loadedCount === CATEGORIES.length) {
+       emptyMsg.textContent = 'ไม่พบข้อมูลอุปกรณ์ในระบบ';
+    }
+  }
+
+  function initGrid(){
+    document.getElementById('cardGrid').innerHTML = CATEGORIES.map(function(c){
+      return '<a class="cat-card" id="card-'+c.key+'" href="' + c.href + '">' +
+        '<div class="cat-card-top"><div class="cat-icon">' + c.icon + '</div><span class="cat-status-dot cat-status-dot--loading"></span></div>' +
+        '<div class="cat-title">' + c.title + '</div>' +
+        '<div class="cat-desc">' + c.desc + '</div>' +
+        '<div class="cat-body"><div class="cat-loading">\u0e01\u0e33\u0e25\u0e31\u0e07\u0e42\u0e2b\u0e25\u0e14\u2026</div></div>' +
+        '<div class="cat-footer"><span class="cat-link">\u0e40\u0e1b\u0e34\u0e14\u0e14\u0e39\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14 \u2192</span><span class="cat-table">' + c.table + '</span></div>' +
+      '</a>';
+    }).join('');
+  }
+
+  async function loadCategory(cat){
+    try{
+      const res = await fetch('http://localhost:8000/api/data?table_name=' + encodeURIComponent(cat.table));
+      const json = await res.json();
+      if (json && json.status==='success' && Array.isArray(json.data) && json.data.length){
+        const data = cat.summarize(json.data);
+        results[cat.key] = { state:'ok', data: data };
+        renderCard(cat, 'ok', data);
+      } else {
+        const msg = (json && json.message) ? json.message : '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e43\u0e19\u0e15\u0e32\u0e23\u0e32\u0e07';
+        results[cat.key] = { state:'error' };
+        renderCard(cat, 'error', null, msg);
+      }
+    }catch(err){
+      console.error('loadCategory', cat.key, err);
+      results[cat.key] = { state:'error' };
+      renderCard(cat, 'error', null, 'localhost:8000 \u0e44\u0e21\u0e48\u0e15\u0e2d\u0e1a\u0e2a\u0e19\u0e2d\u0e07');
+    }
+    renderOverall();
+  }
+
+  function init(){
+    initGrid();
+    renderOverall();
+    CATEGORIES.forEach(function(c){ loadCategory(c); });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
