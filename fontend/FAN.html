@@ -503,7 +503,30 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
   const SEV = { critical: 2, warning: 1, normal: 0 };
   const RATIO_WARN = 1.3;
   const RATIO_CRIT = 1.8;
-  const STALL_FLOOR_RPS = 15;
+  const STALL_FLOOR_RPS = 15; 
+
+  let THRESHOLDS = {}; // measure_object -> { min, max } จากตาราง thresholds (sheet: FAN Ratio)
+  let thresholdsLive = false; // true ถ้าดึง threshold จาก DB ได้จริง (ไม่ได้ fallback)
+
+  async function loadFanThresholds(){
+    const map = {};
+    try{
+      const res = await fetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('FAN Ratio'));
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.data)){
+        json.data.forEach(function(row){
+          map[row.measure_object] = {
+            min: row.min_threshold === null || row.min_threshold === undefined ? null : Number(row.min_threshold),
+            max: row.max_threshold === null || row.max_threshold === undefined ? null : Number(row.max_threshold)
+          };
+        });
+        thresholdsLive = Object.keys(map).length > 0;
+      }
+    }catch(err){
+      console.error('loadFanThresholds: failed to fetch thresholds', err);
+    }
+    return map;
+  }
 
   let state = {
     search: '', status: 'all', type: 'all', site: 'all',
@@ -548,6 +571,18 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
     return 'normal';
   }
 
+  // สถานะจริง: เทียบกับ Maximum/Minimum threshold จาก DB (sheet FAN Ratio) ก่อน
+  // ถ้า measure_object นั้นไม่มี threshold ใน DB เลย ค่อย fallback ไปใช้ ratioStatus (self-defined) แทน
+  function statusOf(mo, avg, ratio){
+    const t = THRESHOLDS[mo];
+    if (t && (t.min !== null || t.max !== null)){
+      if (t.max !== null && avg > t.max) return 'critical';
+      if (t.min !== null && avg < t.min) return 'critical';
+      return 'normal';
+    }
+    return ratioStatus(ratio, avg);
+  }
+
   function computeBoardBaselines(rows){
     const groups = {};
     rows.forEach(function(r){
@@ -586,13 +621,17 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
         const baseline = baselines[bt] || avg || 1;
         const ratio = baseline>0 ? avg/baseline : 1;
         sumAvg += avg;
+        const t = THRESHOLDS[mo] || null;
         
         return {
           mo: mo, board: boardGroup(mo), boardType: bt, fanId: fanIdLabel(mo),
           avg: round2(avg), 
           min: round2(num(r['min_fan_speed'])), 
           max: round2(num(r['max_fan_speed'])),
-          ratio: round2(ratio), status: ratioStatus(ratio, avg)
+          thresholdMin: t && t.min !== null ? t.min : null,
+          thresholdMax: t && t.max !== null ? t.max : null,
+          hasThreshold: !!(t && (t.min !== null || t.max !== null)),
+          ratio: round2(ratio), status: statusOf(mo, avg, ratio)
         };
       });
       
@@ -812,6 +851,9 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
           'data-avg="' + fmtRps(f.avg) + '" ' +
           'data-min="' + fmtRps(f.min) + '" ' +
           'data-max="' + fmtRps(f.max) + '" ' +
+          'data-thmin="' + (f.thresholdMin!==null ? fmtRps(f.thresholdMin) : '') + '" ' +
+          'data-thmax="' + (f.thresholdMax!==null ? fmtRps(f.thresholdMax) : '') + '" ' +
+          'data-hasth="' + (f.hasThreshold ? '1':'0') + '" ' +
           'data-status="' + f.status + '">' + esc(f.fanId) + '</span>';
       }).join('');
       
@@ -821,8 +863,12 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
         '<div class="fan-grid">' + chips + '</div></div>';
     }).join('');
 
-    document.getElementById('detailBody').innerHTML = boardsHtml +
-      '<div class="detail-footnote">Color of each fan compared to the median value of the same fan type in the dataset (faster than ' + RATIO_WARN + 'x = Warning, ' + RATIO_CRIT + 'x = Critical or slower than ' + STALL_FLOOR_RPS + ' Rps considered as potentially stalled) This threshold is self-defined and can be adjusted in the code if the team has reference criteria from the manufacturer</div>';
+    const footnoteHtml = thresholdsLive
+      ? '<div class="detail-footnote">สถานะเทียบกับ Maximum/Minimum threshold จริงจากไฟล์ตรวจสอบเครือข่าย (sheet: FAN Ratio) ต่อ measure object แต่ละตัว ' +
+        '(ถ้า measure object ไหนยังไม่มี threshold ใน DB จะ fallback ไปใช้เกณฑ์ ratio-to-median ชั่วคราว: เร็วกว่า ' + RATIO_WARN + 'x = Warning, ' + RATIO_CRIT + 'x = Critical, ต่ำกว่า ' + STALL_FLOOR_RPS + ' Rps = Critical)</div>'
+      : '<div class="detail-footnote">Color of each fan compared to the median value of the same fan type in the dataset (faster than ' + RATIO_WARN + 'x = Warning, ' + RATIO_CRIT + 'x = Critical or slower than ' + STALL_FLOOR_RPS + ' Rps considered as potentially stalled) This threshold is self-defined and can be adjusted in the code if the team has reference criteria from the manufacturer (ยังดึงค่า threshold จริงจาก DB ไม่ได้ในตอนนี้)</div>';
+
+    document.getElementById('detailBody').innerHTML = boardsHtml + footnoteHtml;
 
     document.getElementById('backdrop').classList.add('is-open');
     document.getElementById('detailPanel').classList.add('is-open');
@@ -835,15 +881,22 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
         const avg = this.dataset.avg;
         const min = this.dataset.min;
         const max = this.dataset.max;
+        const thmin = this.dataset.thmin;
+        const thmax = this.dataset.thmax;
+        const hasth = this.dataset.hasth === '1';
         const status = this.dataset.status;
         
         let color = 'var(--ok)';
         if(status === 'warning') color = 'var(--warn)';
         if(status === 'critical') color = 'var(--crit)';
 
+        const statsLine = hasth
+          ? 'threshold: ' + (thmin || '–') + ' ~ ' + (thmax || '–') + ' | observed: ' + min + ' ~ ' + max
+          : 'lowest: ' + min + ' | highest: ' + max;
+
         tooltip.innerHTML = '<div class="tooltip-mo">' + mo + '</div>' +
                             '<div class="tooltip-val" style="color:' + color + '">' + avg + '</div>' +
-                            '<div class="tooltip-stats">lowest: ' + min + ' | highest: ' + max + '</div>';
+                            '<div class="tooltip-stats">' + statsLine + '</div>';
         
         const rect = this.getBoundingClientRect();
         tooltip.style.left = (rect.left + window.scrollX + (rect.width / 2)) + 'px';
@@ -877,10 +930,13 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
     let rows = null;
     let live = false;
     try{
-      const res = await fetch('http://localhost:8000/api/data?table_name=fan_performance');
-      const json = await res.json();
-      if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length){
-        rows = json.data;
+      const [dataRes, thresholdMap] = await Promise.all([
+        fetch('http://localhost:8000/api/data?table_name=fan_performance').then(r => r.json()).catch(e => null),
+        loadFanThresholds()
+      ]);
+      THRESHOLDS = thresholdMap;
+      if (dataRes && dataRes.status === 'success' && Array.isArray(dataRes.data) && dataRes.data.length){
+        rows = dataRes.data;
         live = true;
       }
     }catch(err){

@@ -500,7 +500,30 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 
   const STATUS_LABEL = { normal: 'Normal', warning: 'Warning', critical: 'Critical' };
   const SEV = { critical: 2, warning: 1, normal: 0 };
-  const RATIO_WARN = 1.6, RATIO_CRIT = 2.0;
+  const RATIO_WARN = 1.6, RATIO_CRIT = 2.0; // fallback เท่านั้น กรณี measure_object ยังไม่มี threshold จริงใน DB
+
+  let THRESHOLDS = {}; // measure_object -> { min, max } จากตาราง thresholds (sheet: MSU) -- MSU มีแค่ Maximum threshold ไม่มี Minimum
+  let thresholdsLive = false;
+
+  async function loadMsuThresholds(){
+    const map = {};
+    try{
+      const res = await fetch('http://localhost:8000/api/thresholds?source_sheet=MSU');
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.data)){
+        json.data.forEach(function(row){
+          map[row.measure_object] = {
+            min: row.min_threshold === null || row.min_threshold === undefined ? null : Number(row.min_threshold),
+            max: row.max_threshold === null || row.max_threshold === undefined ? null : Number(row.max_threshold)
+          };
+        });
+        thresholdsLive = Object.keys(map).length > 0;
+      }
+    }catch(err){
+      console.error('loadMsuThresholds: failed to fetch thresholds', err);
+    }
+    return map;
+  }
 
   let DATA = { meta:{count:0,totalActive:0,begin:'',end:'',granularity:''}, elements: [] };
   let connectionError = null;
@@ -547,6 +570,17 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
     return 'normal';
   }
 
+  // MSU sheet มีแค่ Maximum threshold (ไม่มี Minimum) -- เกิน max = critical, ไม่งั้น normal
+  // fallback เป็น laserStatus (ratio-based) ถ้า measure_object นั้นยังไม่มี threshold ใน DB
+  function thresholdAwareStatus(mo, current, ratio){
+    if (current<=0) return 'off';
+    const t = THRESHOLDS[mo];
+    if (t && t.max !== null){
+      return current > t.max ? 'critical' : 'normal';
+    }
+    return laserStatus(current, ratio);
+  }
+
   function parseRows(rows){
     const order = [];
     const groups = {};
@@ -569,10 +603,13 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
         const mo = r['measure_object'];
         const current = num(r['laser_current']);
         const ratio = current>0 ? current/baseline : 0;
+        const t = THRESHOLDS[mo] || null;
         return {
           mo: mo, unit: unitGroup(mo), pump: pumpLabel(mo),
           current: round2(current), min: round2(num(r['min_laser_current'])), max: round2(num(r['max_laser_current'])),
-          ratio: round2(ratio), status: laserStatus(current, ratio)
+          thresholdMax: t && t.max !== null ? t.max : null,
+          hasThreshold: !!(t && t.max !== null),
+          ratio: round2(ratio), status: thresholdAwareStatus(mo, current, ratio)
         };
       });
       const activeLasers = lasers.filter(function(l){ return l.status!=='off'; });
@@ -814,7 +851,10 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       '<span class="legend-item"><span class="legend-swatch" style="background:var(--off)"></span>Inactive</span></div>';
 
     document.getElementById('detailBody').innerHTML = legend + unitsHtml +
-      '<div class="detail-footnote">Laser color compared to the median of all active lasers in the dataset (over ' + RATIO_WARN + 'x = Warning, over ' + RATIO_CRIT + 'x = Critical). Gray slots indicate no laser current (0 mA) and are not counted as faults. Rising bias current compared to the baseline may indicate laser diode degradation, but no manufacturer reference data is available to confirm this threshold.</div>';
+      '<div class="detail-footnote">' + (thresholdsLive
+        ? 'สถานะเทียบกับ Maximum threshold จริงจากไฟล์ตรวจสอบเครือข่าย (sheet: MSU) ต่อ measure object แต่ละตัว (sheet นี้มีแค่ Maximum threshold ไม่มี Minimum) ถ้า measure object ไหนยังไม่มี threshold ใน DB จะ fallback ไปใช้เกณฑ์ ratio-to-median ชั่วคราว (over ' + RATIO_WARN + 'x = Warning, over ' + RATIO_CRIT + 'x = Critical)'
+        : 'Laser color compared to the median of all active lasers in the dataset (over ' + RATIO_WARN + 'x = Warning, over ' + RATIO_CRIT + 'x = Critical). This is a fallback rule — real threshold data could not be reached from the DB.') +
+        ' Gray slots indicate no laser current (0 mA) and are not counted as faults.</div>';
 
     document.getElementById('backdrop').classList.add('is-open');
     document.getElementById('detailPanel').classList.add('is-open');
@@ -870,7 +910,11 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   async function fetchAllData(){
     connectionError = null;
     try{
-      const res = await fetch('http://localhost:8000/api/data?table_name=msu_performance');
+      const [res, thresholdMap] = await Promise.all([
+        fetch('http://localhost:8000/api/data?table_name=msu_performance'),
+        loadMsuThresholds()
+      ]);
+      THRESHOLDS = thresholdMap;
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length){
         let rows = json.data;

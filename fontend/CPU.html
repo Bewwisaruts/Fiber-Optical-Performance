@@ -481,6 +481,45 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
     if (worst >= 30) return 'warning';
     return 'normal';
   }
+
+  let THRESHOLDS = {}; // measure_object -> { min, max } (%) จากตาราง thresholds (sheet: Control Ratio, = CPU)
+  let thresholdsLive = false;
+
+  async function loadCpuThresholds(){
+    const map = {};
+    try{
+      const res = await fetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Control Ratio'));
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.data)){
+        json.data.forEach(function(row){
+          // ค่าใน DB เป็นสัดส่วน 0-1 (เช่น 0.9 = 90%) ต้อง *100 ให้ตรง scale กับ cpuAvg ที่หน้านี้ใช้ (%)
+          map[row.measure_object] = {
+            min: row.min_threshold === null || row.min_threshold === undefined ? null : Number(row.min_threshold) * 100,
+            max: row.max_threshold === null || row.max_threshold === undefined ? null : Number(row.max_threshold) * 100
+          };
+        });
+        thresholdsLive = Object.keys(map).length > 0;
+      }
+    }catch(err){
+      console.error('loadCpuThresholds: failed to fetch thresholds', err);
+    }
+    return map;
+  }
+
+  // สถานะรายพอร์ต: เทียบกับ threshold จริงของ CPU utilization (measure_object นั้นๆ) ก่อน
+  // ไม่มี threshold ของ RAM ในไฟล์ (sheet Control Ratio มีแค่ CPU) จึงใช้เกณฑ์ 30/45 hardcode เดิมสำหรับ RAM เสมอ
+  function ifaceStatus(mo, cpuAvg, ramAvg){
+    const t = THRESHOLDS[mo];
+    let cpuStatus = 'normal';
+    if (t && (t.min !== null || t.max !== null)){
+      if (t.max !== null && cpuAvg > t.max) cpuStatus = 'critical';
+      else if (t.min !== null && cpuAvg < t.min) cpuStatus = 'critical';
+    } else {
+      cpuStatus = cpuAvg >= 45 ? 'critical' : cpuAvg >= 30 ? 'warning' : 'normal';
+    }
+    const ramStatus = ramAvg >= 45 ? 'critical' : ramAvg >= 30 ? 'warning' : 'normal';
+    return SEV[cpuStatus] >= SEV[ramStatus] ? cpuStatus : ramStatus;
+  }
   function esc(s){
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
@@ -606,8 +645,7 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
     empty.style.display = 'none';
     tbody.innerHTML = rows.map(function(e){
       const slots = e.interfaces.map(function(i){
-        const worst = Math.max(i.cpuAvg,i.ramAvg);
-        const st = worst>=45?'critical':(worst>=30?'warning':'normal');
+        const st = i.status;
         return '<span class="slot slot--' + st + '" title="' + esc(i.mo) + ' \u00b7 CPU ' + fmtPct(i.cpuAvg) + ' \u00b7 RAM ' + fmtPct(i.ramAvg) + '">' + esc(ifaceLabel(i.mo)) + '</span>';
       }).join('');
       return '<tr data-ip="' + e.ip + '">' +
@@ -682,18 +720,19 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
     let endStr = String(DATA.meta.end);
     const endTime = endStr.length >= 16 ? endStr.slice(11,16) : endStr;
     document.getElementById('detailBody').innerHTML = e.interfaces.map(function(i){
-      const worst = Math.max(i.cpuAvg,i.ramAvg);
-      const st = worst>=45?'critical':(worst>=30?'warning':'normal');
+      const st = i.status;
       return '<div class="iface-card"><div class="iface-head">' +
         '<span class="iface-slot-badge slot--' + st + '">' + esc(ifaceLabel(i.mo)) + '</span>' +
-        '<span class="iface-mo">' + esc(i.mo) + '</span></div>' +
+        '<span class="iface-mo">' + esc(i.mo) + (i.hasThreshold ? ' <small style="opacity:.6">(threshold ' + i.thresholdMin + '\u2013' + i.thresholdMax + '%)</small>' : '') + '</span></div>' +
         rangeBlock('CPU', i.cpuMin, i.cpuAvg, i.cpuMax) +
         rangeBlock('RAM', i.ramMin, i.ramAvg, i.ramMax) + '</div>';
     }).join('') +
       '<div class="detail-footnote">Values shown are the range (min\u2013avg\u2013max) for each Measure Object during the period ' +
       DATA.meta.begin + ' \u2013 ' + endTime + ' (' + DATA.meta.granularity + '). Since the History Query file loaded contains only a single time window, ' +
       'it is not possible to display a trend chart over time. ' +
-      '\u2014 To see trends, please import a file with multiple time windows or export the data as a series</div>';
+      '\u2014 To see trends, please import a file with multiple time windows or export the data as a series' +
+      (thresholdsLive ? ' \u2014 CPU status is compared against real thresholds imported from the network inspection file (sheet: Control Ratio); RAM still uses the default 30/45% rule since no RAM threshold sheet exists yet.' : '') +
+      '</div>';
     document.getElementById('backdrop').classList.add('is-open');
     document.getElementById('detailPanel').classList.add('is-open');
     document.getElementById('detailClose').focus();
@@ -723,14 +762,22 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
       const g = groups[key];
       const parts = key.split('|'); const me = parts[0]; const ip = parts[1];
       const interfaces = g.map(function(r){
+        const mo = r['measure_object'];
+        const cpuAvg = round2(num(r['cpu_avg_ratio'])*100);
+        const ramAvg = round2(num(r['ram_avg_ratio'])*100);
+        const t = THRESHOLDS[mo] || null;
         return {
-          mo: r['measure_object'],
-          cpuAvg: round2(num(r['cpu_avg_ratio'])*100),
+          mo: mo,
+          cpuAvg: cpuAvg,
           cpuMin: round2(num(r['cpu_min_ratio'])*100),
           cpuMax: round2(num(r['cpu_max_ratio'])*100),
-          ramAvg: round2(num(r['ram_avg_ratio'])*100),
+          ramAvg: ramAvg,
           ramMin: round2(num(r['ram_min_ratio'])*100),
-          ramMax: round2(num(r['ram_max_ratio'])*100)
+          ramMax: round2(num(r['ram_max_ratio'])*100),
+          thresholdMin: t && t.min !== null ? t.min : null,
+          thresholdMax: t && t.max !== null ? t.max : null,
+          hasThreshold: !!(t && (t.min !== null || t.max !== null)),
+          status: ifaceStatus(mo, cpuAvg, ramAvg)
         };
       });
 
@@ -742,11 +789,14 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
       const cpuAvgAll = interfaces.length ? cpuTotal / interfaces.length : 0;
       const ramAvgAll = interfaces.length ? ramTotal / interfaces.length : 0;
 
+      let worstStatus = 'normal';
+      interfaces.forEach(function(i){ if (SEV[i.status] > SEV[worstStatus]) worstStatus = i.status; });
+
       return {
         me: me, ip: ip, type: me.split('_')[0], site: ip.split('.').slice(0,2).join('.'),
         cpuMaxSlot: round2(cpuMaxSlot), ramMaxSlot: round2(ramMaxSlot),
         cpuAvgAll: round2(cpuAvgAll), ramAvgAll: round2(ramAvgAll),
-        status: computeStatus(cpuMaxSlot, ramMaxSlot), interfaces: interfaces
+        status: worstStatus, interfaces: interfaces
       };
     });
     const first = rows[0]||{};
@@ -765,7 +815,11 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
 
   async function fetchAllData() {
     try {
-        const res = await fetch('http://localhost:8000/api/data');
+        const [res, thresholdMap] = await Promise.all([
+          fetch('http://localhost:8000/api/data'),
+          loadCpuThresholds()
+        ]);
+        THRESHOLDS = thresholdMap;
         const json = await res.json();
         
         if (json.status === 'success' && json.data && json.data.length > 0) {
