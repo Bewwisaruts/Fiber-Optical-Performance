@@ -482,8 +482,37 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 
   const STATUS_LABEL = { normal: 'ปกติ', warning: 'เฝ้าระวัง', critical: 'วิกฤต' };
   const SEV = { critical: 2, warning: 1, normal: 0 };
-  const BER_WARN = 0.001, BER_CRIT = 0.005;
-  const DEV_WARN = 5, DEV_CRIT = 9, FLOOR_ABS = -45;
+  const BER_WARN = 0.001, BER_CRIT = 0.005; // fallback เท่านั้น
+  const DEV_WARN = 5, DEV_CRIT = 9, FLOOR_ABS = -45; // fallback เท่านั้น
+
+  let BER_THRESHOLDS = {}; // measure_object -> {max} จาก sheet Line board (คอลัมน์ 'Threshold' เทียบกับ Instant BER After FEC, ไม่มี min)
+  let OUT_THRESHOLDS = {}; // measure_object -> {min,max} ของ Output Optical Power
+  let IN_THRESHOLDS = {};  // measure_object -> {min,max} ของ Input Optical Power
+  let thresholdsLive = false;
+
+  async function loadLineThresholds(){
+    const berMap = {}, outMap = {}, inMap = {};
+    try{
+      const res = await fetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Line board'));
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.data)){
+        json.data.forEach(function(row){
+          const entry = {
+            min: row.min_threshold === null || row.min_threshold === undefined ? null : Number(row.min_threshold),
+            max: row.max_threshold === null || row.max_threshold === undefined ? null : Number(row.max_threshold)
+          };
+          const mk = row.metric_key || '';
+          if (mk.indexOf('ber') >= 0) berMap[row.measure_object] = entry;
+          else if (mk.indexOf('output') >= 0) outMap[row.measure_object] = entry;
+          else if (mk.indexOf('input') >= 0) inMap[row.measure_object] = entry;
+        });
+        thresholdsLive = Object.keys(berMap).length > 0 || Object.keys(outMap).length > 0 || Object.keys(inMap).length > 0;
+      }
+    }catch(err){
+      console.error('loadLineThresholds: failed to fetch thresholds', err);
+    }
+    return { berMap: berMap, outMap: outMap, inMap: inMap };
+  }
 
   let DATA = { meta:{count:0,totalItems:0,begin:'',end:'',granularity:''}, elements: [] };
   let connectionError = null;
@@ -554,6 +583,38 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
     return 'normal';
   }
 
+  // BER: threshold จริงมีแค่ max (เทียบกับ Instant BER After FEC) ไม่มี min
+  // ถ้า mo นั้นไม่มี threshold ใน DB เลย fallback ไปใช้ berStatus (เกณฑ์ BER_WARN/BER_CRIT เดิม)
+  function thresholdAwareBerStatus(mo, afterFec, beforeFec){
+    if (afterFec===null && beforeFec===null) return 'off';
+    const t = BER_THRESHOLDS[mo];
+    if (t && t.max !== null){
+      if (afterFec !== null && afterFec > t.max) return 'critical';
+      if (beforeFec !== null && beforeFec >= BER_WARN) return 'warning'; // ยังไม่มี warn threshold แยกจาก DB จึงใช้เกณฑ์เดิมสำหรับ warning
+      return 'normal';
+    }
+    return berStatus(afterFec, beforeFec);
+  }
+
+  // Power: เทียบกับ threshold จริงของ Output/Input Optical Power (sheet Line board) ก่อน
+  // ถ้า mo นั้นไม่มี threshold เลยทั้งคู่ fallback ไปใช้ powerStatus (deviation-based) แทน
+  function thresholdAwarePowerStatus(mo, inputV, outputV, inBase, outBase){
+    if (inputV===null && outputV===null) return 'off';
+    const outT = OUT_THRESHOLDS[mo], inT = IN_THRESHOLDS[mo];
+    const hasOut = outT && (outT.min !== null || outT.max !== null);
+    const hasIn = inT && (inT.min !== null || inT.max !== null);
+    if (!hasOut && !hasIn) return powerStatus(inputV, outputV, inBase, outBase);
+
+    let status = 'normal';
+    if (hasOut && outputV !== null){
+      if ((outT.max !== null && outputV > outT.max) || (outT.min !== null && outputV < outT.min)) status = 'critical';
+    }
+    if (hasIn && inputV !== null){
+      if ((inT.max !== null && inputV > inT.max) || (inT.min !== null && inputV < inT.min)) status = 'critical';
+    }
+    return status;
+  }
+
   function computeBaselines(rows){
     const inByType = {}, outByType = {};
     rows.forEach(function(r){
@@ -598,13 +659,20 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
         const ib = baselines.inBase[ct]!==undefined ? baselines.inBase[ct] : (iv===null?0:iv);
         const ob = baselines.outBase[ct]!==undefined ? baselines.outBase[ct] : (ov===null?0:ov);
         let kind = 'other', status = 'off';
-        if (isBer){ kind='ber'; status = berStatus(afterFec, beforeFec); }
-        else if (isPower){ kind='power'; status = powerStatus(iv, ov, ib, ob); }
+        if (isBer){ kind='ber'; status = thresholdAwareBerStatus(mo, afterFec, beforeFec); }
+        else if (isPower){ kind='power'; status = thresholdAwarePowerStatus(mo, iv, ov, ib, ob); }
+        const berT = BER_THRESHOLDS[mo] || null;
+        const outT = OUT_THRESHOLDS[mo] || null, inT = IN_THRESHOLDS[mo] || null;
         return {
           mo: mo, unit: slotGroup(mo), label: itemLabel(mo), kind: kind,
           afterFec: afterFec, beforeFec: beforeFec,
           input: iv, output: ov,
           outMax: toNum(r['max_out_power']), outMin: toNum(r['min_out_power']),
+          berThresholdMax: berT && berT.max !== null ? berT.max : null,
+          outThresholdMin: outT && outT.min !== null ? outT.min : null,
+          outThresholdMax: outT && outT.max !== null ? outT.max : null,
+          inThresholdMin: inT && inT.min !== null ? inT.min : null,
+          inThresholdMax: inT && inT.max !== null ? inT.max : null,
           status: status
         };
       });
@@ -899,7 +967,10 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       '<span class="legend-item">\u0e15\u0e31\u0e27\u0e2b\u0e49\u0e2d\u0e22 B=BER, P=\u0e01\u0e33\u0e25\u0e31\u0e07\u0e41\u0e2a\u0e07</span></div>';
 
     document.getElementById('detailBody').innerHTML = legend + unitsHtml +
-      '<div class="detail-footnote">\u0e41\u0e15\u0e48\u0e25\u0e30\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e43\u0e19\u0e44\u0e1f\u0e25\u0e4c\u0e15\u0e49\u0e19\u0e09\u0e1a\u0e31\u0e1a\u0e40\u0e1b\u0e47\u0e19\u0e44\u0e14\u0e49\u0e17\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32 BER \u0e2b\u0e23\u0e37\u0e2d\u0e04\u0e48\u0e32\u0e01\u0e33\u0e25\u0e31\u0e07\u0e41\u0e2a\u0e07 \u0e2d\u0e22\u0e48\u0e32\u0e07\u0e43\u0e14\u0e2d\u0e22\u0e48\u0e32\u0e07\u0e2b\u0e19\u0e36\u0e48\u0e07\u0e15\u0e48\u0e2d\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23 \u0e44\u0e21\u0e48\u0e40\u0e04\u0e22\u0e17\u0e31\u0e49\u0e07\u0e04\u0e39\u0e48 \u0e08\u0e36\u0e07\u0e40\u0e17\u0e35\u0e22\u0e1a\u0e40\u0e04\u0e35\u0e22\u0e07\u0e01\u0e31\u0e19\u0e15\u0e32\u0e21\u0e40\u0e01\u0e13\u0e11\u0e4c\u0e02\u0e2d\u0e07\u0e15\u0e31\u0e27\u0e40\u0e2d\u0e07 BER \u0e2b\u0e25\u0e31\u0e07 FEC \u0e21\u0e35\u0e04\u0e48\u0e32\u0e21\u0e32\u0e01\u0e01\u0e27\u0e48\u0e32 0 = \u0e27\u0e34\u0e01\u0e24\u0e15\u0e40\u0e2a\u0e21\u0e2d 8 \u0e40\u0e19\u0e37\u0e48\u0e2d\u0e07\u0e08\u0e32\u0e01\u0e2b\u0e21\u0e32\u0e22\u0e04\u0e27\u0e32\u0e21\u0e27\u0e48\u0e32\u0e21\u0e35\u0e02\u0e49\u0e2d\u0e1c\u0e34\u0e14\u0e2b\u0e25\u0e38\u0e14\u0e23\u0e2d\u0e14\u0e01\u0e32\u0e23\u0e41\u0e01\u0e49\u0e44\u0e02 FEC \u0e08\u0e23\u0e34\u0e07</div>';
+      '<div class="detail-footnote">' + (thresholdsLive
+        ? '\u0e2a\u0e16\u0e32\u0e19\u0e30\u0e40\u0e17\u0e35\u0e22\u0e1a\u0e01\u0e31\u0e1a threshold \u0e08\u0e23\u0e34\u0e07\u0e08\u0e32\u0e01\u0e44\u0e1f\u0e25\u0e4c\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a\u0e40\u0e04\u0e23\u0e37\u0e2d\u0e02\u0e48\u0e32\u0e22 (sheet: Line board) \u0e15\u0e48\u0e2d measure object \u0e41\u0e15\u0e48\u0e25\u0e30\u0e15\u0e31\u0e27 \u0e41\u0e22\u0e01\u0e15\u0e32\u0e21\u0e1b\u0e23\u0e30\u0e40\u0e20\u0e17: BER \u0e21\u0e35\u0e41\u0e04\u0e48 Maximum threshold (\u0e40\u0e01\u0e34\u0e19 = \u0e27\u0e34\u0e01\u0e24\u0e15), Output/Input Power \u0e21\u0e35\u0e17\u0e31\u0e49\u0e07 Maximum \u0e41\u0e25\u0e30 Minimum \u0e2b\u0e32\u0e01 measure object \u0e44\u0e2b\u0e19\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35 threshold \u0e43\u0e19 DB \u0e08\u0e30 fallback \u0e44\u0e1b\u0e43\u0e0a\u0e49\u0e40\u0e01\u0e13\u0e11\u0e4c\u0e40\u0e14\u0e34\u0e21\u0e41\u0e17\u0e19'
+        : '\u0e41\u0e15\u0e48\u0e25\u0e30\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e43\u0e19\u0e44\u0e1f\u0e25\u0e4c\u0e15\u0e49\u0e19\u0e09\u0e1a\u0e31\u0e1a\u0e40\u0e1b\u0e47\u0e19\u0e44\u0e14\u0e49\u0e17\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32 BER \u0e2b\u0e23\u0e37\u0e2d\u0e04\u0e48\u0e32\u0e01\u0e33\u0e25\u0e31\u0e07\u0e41\u0e2a\u0e07 \u2014 \u0e22\u0e31\u0e07\u0e14\u0e36\u0e07 threshold \u0e08\u0e23\u0e34\u0e07\u0e08\u0e32\u0e01 DB \u0e44\u0e21\u0e48\u0e44\u0e14\u0e49 \u0e43\u0e0a\u0e49\u0e40\u0e01\u0e13\u0e11\u0e4c\u0e2a\u0e33\u0e23\u0e2d\u0e07\u0e0a\u0e31\u0e48\u0e27\u0e04\u0e23\u0e32\u0e27') +
+        '</div>';
 
     document.getElementById('backdrop').classList.add('is-open');
     document.getElementById('detailPanel').classList.add('is-open');
@@ -923,7 +994,13 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   async function fetchAllData(){
     connectionError = null;
     try{
-      const res = await fetch('http://localhost:8000/api/data?table_name=line-card_performance');
+      const [res, thresholdMaps] = await Promise.all([
+        fetch('http://localhost:8000/api/data?table_name=line-card_performance'),
+        loadLineThresholds()
+      ]);
+      BER_THRESHOLDS = thresholdMaps.berMap;
+      OUT_THRESHOLDS = thresholdMaps.outMap;
+      IN_THRESHOLDS = thresholdMaps.inMap;
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length){
         let rows = json.data;
