@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Network Elements Monitoring | Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg: #0A0E14;
+  --panel: #121821;
+  --panel-2: #171F2A;
+  --border: #232D3A;
+  --border-soft: #1A2330;
+  --text: #E7EDF4;
+  --text-dim: #8996A6;
+  --text-faint: #55616F;
+  --accent: #34D6BE;
+  --accent-dim: #1E8577;
+  --crit: #F2585F;
+  --crit-bg: rgba(242,88,95,0.15);
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  --font-body: -apple-system, 'Segoe UI', ui-sans-serif, system-ui, Roboto, sans-serif;
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+*{ box-sizing:border-box; }
+html,body{ height:100%; margin:0; }
+body{
+  display:flex; align-items:center; justify-content:center;
+  background:
+    radial-gradient(1100px 500px at 15% -10%, rgba(52,214,190,0.08), transparent 60%),
+    radial-gradient(900px 500px at 100% 100%, rgba(52,214,190,0.05), transparent 55%),
+    var(--bg);
+  color:var(--text); font-family:var(--font-body); -webkit-font-smoothing:antialiased;
+}
+.login-card{
+  width:100%; max-width:380px; background:var(--panel); border:1px solid var(--border-soft);
+  border-radius:var(--radius-lg); padding:32px 30px; margin:20px;
+}
+.brand{ display:flex; align-items:center; gap:10px; margin-bottom:22px; }
+.brand-icon svg rect:nth-child(1){ opacity:.35; }
+.brand-icon svg rect:nth-child(2){ opacity:.6; }
+.brand-icon svg rect:nth-child(3){ opacity:.85; }
+.brand-icon svg rect:nth-child(4){ opacity:1; }
+.brand-title{ font-family:var(--font-display); font-weight:700; font-size:16.5px; margin:0; color:var(--text); line-height:1.3; }
+.brand-sub{ font-size:11.5px; color:var(--text-faint); margin-top:2px; }
+
+.field{ margin-bottom:16px; }
+.field label{ display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); margin-bottom:6px; }
+.field input{
+  width:100%; padding:11px 13px; font-size:14px; font-family:var(--font-mono);
+  background:var(--panel-2); border:1px solid var(--border); border-radius:var(--radius); color:var(--text);
+}
+.field input:focus{ outline:none; border-color:var(--accent); }
+
+.login-btn{
+  width:100%; padding:12px; font-family:var(--font-body); font-size:14px; font-weight:700;
+  background:var(--accent); border:1px solid var(--accent); border-radius:var(--radius); color:#06201B;
+  cursor:pointer; margin-top:6px; transition:background .15s;
+}
+.login-btn:hover{ background:#42E2CA; }
+.login-btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+.error-box{
+  display:none; background:var(--crit-bg); border:1px solid rgba(242,88,95,0.35); color:var(--crit);
+  font-size:12.5px; padding:10px 12px; border-radius:var(--radius); margin-bottom:16px;
+}
+.error-box.is-visible{ display:block; }
+
+.hint{ margin-top:18px; font-size:11.5px; color:var(--text-faint); text-align:center; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">
+      <svg width="26" height="19" viewBox="0 0 28 20" fill="var(--accent)">
+        <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
+        <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
+        <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
+        <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
+      </svg>
+    </span>
+    <div>
+      <p class="brand-title">Network Elements Monitoring</p>
+      <div class="brand-sub">Sign in to continue</div>
+    </div>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <form id="loginForm">
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+  </form>
+
+  <div class="hint">Contact your administrator if you don't have an account.</div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var API_BASE = 'http://localhost:8000';
+
+  // ถ้า login ไว้อยู่แล้ว (มี token ค้าง) ให้เด้งเข้า index ไปเลย ไม่ต้อง login ซ้ำ
+  if (localStorage.getItem('nem_token')) {
+    window.location.href = 'index.html';
+  }
+
+  var form = document.getElementById('loginForm');
+  var errorBox = document.getElementById('errorBox');
+  var loginBtn = document.getElementById('loginBtn');
+
+  function showError(msg){
+    errorBox.textContent = msg;
+    errorBox.classList.add('is-visible');
+  }
+  function hideError(){
+    errorBox.classList.remove('is-visible');
+  }
+
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    hideError();
+    var username = document.getElementById('username').value.trim();
+    var password = document.getElementById('password').value;
+    if (!username || !password) return;
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Signing in...';
+
+    try{
+      var body = new URLSearchParams();
+      body.set('username', username);
+      body.set('password', password);
+
+      var res = await fetch(API_BASE + '/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      var data = await res.json();
+
+      if (res.ok && data && data.access_token){
+        localStorage.setItem('nem_token', data.access_token);
+        localStorage.setItem('nem_username', data.username || username);
+        localStorage.setItem('nem_role', data.role || '');
+        window.location.href = 'index.html';
+        return;
+      }
+
+      showError((data && data.detail) || 'Incorrect username or password.');
+    }catch(err){
+      console.error(err);
+      showError('Cannot reach the server (localhost:8000). Check that uvicorn is running.');
+    }finally{
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Sign In';
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

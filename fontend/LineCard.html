@@ -367,6 +367,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 }
 
 </style>
+<script src="auth-client.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -493,7 +494,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   async function loadLineThresholds(){
     const berMap = {}, outMap = {}, inMap = {};
     try{
-      const res = await fetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Line board'));
+      const res = await authFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Line board'));
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data)){
         json.data.forEach(function(row){
@@ -995,7 +996,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
     connectionError = null;
     try{
       const [res, thresholdMaps] = await Promise.all([
-        fetch('http://localhost:8000/api/data?table_name=line-card_performance'),
+        authFetch('http://localhost:8000/api/data?table_name=line-card_performance'),
         loadLineThresholds()
       ]);
       BER_THRESHOLDS = thresholdMaps.berMap;
@@ -1037,7 +1038,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       formData.append('file', file);
       showUploadMsg('\u0e01\u0e33\u0e25\u0e31\u0e07\u0e2d\u0e31\u0e1b\u0e42\u0e2b\u0e25\u0e14\u0e41\u0e25\u0e30\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e1c\u0e25\u0e44\u0e1f\u0e25\u0e4c...', true);
       try{
-        const res = await fetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
+        const res = await authFetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
         const data = await res.json();
         if (data && data.status === 'success'){
           showUploadMsg(data.message || '\u0e19\u0e33\u0e40\u0e02\u0e49\u0e32\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08', true);
@@ -1109,6 +1110,11 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   </div>
   
   <ul class="side-nav-menu">
+    <li class="side-nav-item" style="padding:16px 20px 12px; display:flex; flex-direction:column; gap:2px;">
+      <span style="font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint);">Signed in as</span>
+      <span id="navUsername" style="font-family:var(--font-mono); font-size:13px; color:var(--accent); font-weight:600;">\u2014</span>
+    </li>
+
      <li class="side-nav-item">
       <a href="index.html" class="side-nav-link">Home</a>
      </li>
@@ -1136,6 +1142,10 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 
     <li class="side-nav-item">
       <a href="ClientCard.html" class="side-nav-link">Client Card</a>
+    </li>
+
+    <li class="side-nav-item">
+      <button class="side-nav-link" onclick="logout()" style="color:#F2585F; width:100%;">Logout</button>
     </li>
 
     <!-- เมนูเดี่ยว 1 -->

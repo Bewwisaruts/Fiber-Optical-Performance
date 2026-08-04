@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, UploadFile, File, HTTPException
+from fastapi import FastAPI, Query, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -9,6 +9,7 @@ import re
 from collections import defaultdict
 from datetime import date, datetime
 import openpyxl
+from auth import router as auth_router, get_current_user, require_role
 
 app = FastAPI(title="Network Performance API (Enterprise Version)")
 
@@ -19,6 +20,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# เพิ่มระบบ login (/api/login, /api/me) — ไม่กระทบ endpoint เดิมด้านล่าง
+app.include_router(auth_router)
 
 # ==========================================
 # 1. Database Configuration
@@ -374,7 +378,7 @@ def upsert_thresholds_df(df: pd.DataFrame):
 # ==========================================
 # 4. API Endpoints
 # ==========================================
-@app.get("/api/metrics")
+@app.get("/api/metrics", dependencies=[Depends(get_current_user)])
 def get_network_metrics(me_ip: str = Query(..., description="ไอพีของอุปกรณ์เครือข่าย")):
     try:
         conn = get_db_connection()
@@ -397,7 +401,7 @@ def get_network_metrics(me_ip: str = Query(..., description="ไอพีขอ�
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.get("/api/data")
+@app.get("/api/data", dependencies=[Depends(get_current_user)])
 def get_all_data(table_name: str = Query("cpu_performance", description="ชื่อตารางที่ต้องการดึงข้อมูล")):
     """ Endpoint สำหรับดึงข้อมูลจากตารางที่ต้องการไปแสดงหน้าเว็บ """
     # ตรวจสอบความปลอดภัย ป้องกัน SQL Injection
@@ -423,7 +427,7 @@ def get_all_data(table_name: str = Query("cpu_performance", description="ชื�
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/upload")
+@app.post("/api/upload", dependencies=[Depends(require_role("admin"))])
 async def upload_file_automated(file: UploadFile = File(...)):
     # ป้องกัน OOM: จำกัดขนาดไฟล์อัปโหลดไว้ไม่เกิน 50MB
     MAX_FILE_SIZE = 50 * 1024 * 1024
@@ -599,7 +603,7 @@ async def upload_file_automated(file: UploadFile = File(...)):
         return {"status": "error", "message": f"การประมวลผลล้มเหลว: {str(e)}"}
 
 
-@app.post("/api/thresholds/upload")
+@app.post("/api/thresholds/upload", dependencies=[Depends(require_role("admin"))])
 async def upload_thresholds(file: UploadFile = File(...), header_row: int = Query(2, description="แถวที่เป็น header จริงในแต่ละ sheet")):
     """
     อัปโหลดไฟล์ workbook รายเดือน (ไฟล์เดียวกับที่ใช้ upload ข้อมูล performance ก็ได้ ถ้ามี
@@ -654,7 +658,7 @@ async def upload_thresholds(file: UploadFile = File(...), header_row: int = Quer
         return {"status": "error", "message": f"การประมวลผลล้มเหลว: {str(e)}"}
 
 
-@app.get("/api/thresholds")
+@app.get("/api/thresholds", dependencies=[Depends(get_current_user)])
 def get_thresholds(
     metric_key: str | None = Query(None, description="เช่น fan_fan_speed, client_output_optical_power"),
     me_ip: str | None = Query(None),
