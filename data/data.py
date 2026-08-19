@@ -2,7 +2,7 @@
 import_thresholds.py
 =====================
 อ่านค่า Maximum/Minimum threshold จาก 5 sheet ในไฟล์ Excel รายเดือน แล้ว
-upsert เข้าตาราง `thresholds` ใน Postgres (ดู 01_create_thresholds_table.sql)
+upsert เข้าตาราง `thresholds` ใน Postgres (ดู database/01_create_all_tables_supabase.sql)
 
 Sheet เป้าหมาย (แก้ชื่อได้ที่ TARGET_SHEETS ด้านล่างถ้าชื่อจริงสะกดต่างเล็กน้อย):
     - Control Ratio
@@ -26,35 +26,80 @@ Sheet เป้าหมาย (แก้ชื่อได้ที่ TARGET_S
        ใช้ค่าจากคอลัมน์กลุ่มวันที่ล่าสุด (ขวาสุด) เป็นค่าที่ import
     4. Insert/Update (upsert) เข้าตาราง thresholds ผ่าน staging table เหมือนที่ fast.py ทำ
 
+การตั้งค่า connection:
+    ต้องมีไฟล์ .env อยู่โฟลเดอร์เดียวกับสคริปต์นี้ (หรือที่ root โปรเจกต์) โดยมีตัวแปร:
+        DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME, DB_SSLMODE
+    ดูตัวอย่างที่ backend/.env.example
+
 วิธีใช้:
     # ดูก่อนว่า parser อ่านโครงสร้างไฟล์ถูกไหม (ไม่ยิงเข้า DB)
-    python import_thresholds.py path/to/workbook.xlsx --dry-run
+    python data.py path/to/workbook.xlsx --dry-run
 
     # ของจริง: import เข้า DB
-    python import_thresholds.py path/to/workbook.xlsx
+    python data.py path/to/workbook.xlsx
 """
 
 import argparse
 import os
 import re
 import sys
+from pathlib import Path
 from datetime import date, datetime
 from collections import defaultdict
 
 import pandas as pd
 import openpyxl
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 
 # ==========================================================
-# 1. ตั้งค่าการเชื่อมต่อ DB (ให้ตรงกับ fast.py)
+# 1. ตั้งค่าการเชื่อมต่อ DB (อ่านจาก .env แทนการ hardcode)
+#    หา .env จาก path ของสคริปต์นี้โดยตรง ไม่พึ่ง current working directory
+#    ถ้าไม่เจอในโฟลเดอร์เดียวกัน จะลองหาที่ backend/.env ด้วย (โครงสร้างโปรเจกต์เดิม)
 # ==========================================================
-DB_USER = "postgres"
-DB_PASSWORD = "bew30012548"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "Client-Card"
+_here = Path(__file__).resolve().parent
+_candidates = [_here / ".env", _here.parent / "backend" / ".env"]
+ENV_PATH = next((p for p in _candidates if p.exists()), _candidates[0])
+load_dotenv(dotenv_path=ENV_PATH, override=True)
 
-CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+def _env(key, default=None):
+    """ อ่านค่า env var โดยถือว่าค่าว่าง ('' หรือช่องว่างล้วน) เหมือนกับไม่มีค่า -> ใช้ default แทน """
+    val = os.getenv(key)
+    if val is None or val.strip() == "":
+        return default
+    return val.strip()
+
+DB_USER = _env("DB_USER", "postgres")
+DB_PASSWORD = _env("DB_PASSWORD")
+DB_HOST = _env("DB_HOST")
+DB_PORT = _env("DB_PORT", "5432")
+DB_NAME = _env("DB_NAME", "postgres")
+DB_SSLMODE = _env("DB_SSLMODE", "require")
+
+if not DB_PASSWORD or not DB_HOST:
+    print(f"[error] ไม่พบ DB_PASSWORD หรือ DB_HOST ที่ถูกต้องใน {ENV_PATH}")
+    print("        สร้างไฟล์ .env (copy จาก backend/.env.example) แล้วกรอกค่า Supabase ก่อนรันสคริปต์นี้")
+    print("        ตรวจสอบด้วยว่าแต่ละบรรทัดเป็น KEY=value ไม่มีช่องว่างหรือเครื่องหมายคำพูดครอบค่า")
+    sys.exit(1)
+
+try:
+    int(DB_PORT)
+except (TypeError, ValueError):
+    print(f"[error] DB_PORT ใน {ENV_PATH} ไม่ใช่ตัวเลข (ค่าที่อ่านได้: {DB_PORT!r}) ปกติควรเป็น 5432")
+    sys.exit(1)
+
+# ใช้ URL.create() แทนการต่อ f-string ตรงๆ เพราะรหัสผ่านที่ Supabase generate ให้
+# มักมีอักขระพิเศษ (@ : / # ?) ซึ่งถ้าต่อ string เองจะทำให้ parser อ่าน host/port ผิดเพี้ยน
+CONNECTION_URL = URL.create(
+    drivername="postgresql",
+    username=DB_USER,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=int(DB_PORT),
+    database=DB_NAME,
+    query={"sslmode": DB_SSLMODE},
+)
 
 # ==========================================================
 # 2. รายชื่อ sheet เป้าหมาย
@@ -299,7 +344,7 @@ def upsert_thresholds(df: pd.DataFrame, engine):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Import threshold sheets into Postgres")
+    parser = argparse.ArgumentParser(description="Import threshold sheets into Postgres (Supabase)")
     parser.add_argument(
         "xlsx_path",
         nargs="?",
@@ -354,7 +399,7 @@ def main():
         print(f"\n[dry-run] ไม่ได้เขียนเข้า DB -- ดูตัวอย่างผลลัพธ์ได้ที่ {out_csv}")
         return
 
-    engine = create_engine(CONNECTION_STRING)
+    engine = create_engine(CONNECTION_URL)
     upsert_thresholds(df, engine)
 
 

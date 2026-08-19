@@ -1,15 +1,18 @@
-from fastapi import FastAPI, Query, UploadFile, File, HTTPException, Depends
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+from fastapi import FastAPI, Query, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 import io
 import re
 from collections import defaultdict
 from datetime import date, datetime
 import openpyxl
-from auth import router as auth_router, get_current_user, require_role
 
 app = FastAPI(title="Network Performance API (Enterprise Version)")
 
@@ -21,24 +24,78 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# เพิ่มระบบ login (/api/login, /api/me) — ไม่กระทบ endpoint เดิมด้านล่าง
-app.include_router(auth_router)
-
 # ==========================================
-# 1. Database Configuration
+# 1. Database Configuration (Supabase / Postgres via .env)
 # ==========================================
-DB_USER = "postgres"
-DB_PASSWORD = "bew30012548"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "Client-Card"
+# โหลดค่าจากไฟล์ .env โดยชี้ path ตรงไปที่โฟลเดอร์เดียวกับไฟล์นี้เสมอ
+# (ไม่พึ่ง current working directory เพราะบางทีรัน uvicorn จากคนละโฟลเดอร์ ทำให้หา .env ไม่เจอ)
+# ถ้ายังไม่มีไฟล์ .env: copy .env.example -> .env แล้วกรอกรหัสผ่าน Supabase จริง
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+# override=True: บังคับให้ค่าใน .env ทับ environment variable เดิมที่อาจค้างอยู่ในระบบ/เทอร์มินัล
+# (ถ้าไม่ใส่ override, load_dotenv จะไม่ทับค่าที่มี env var ชื่อเดียวกันตั้งอยู่แล้วในเครื่อง
+#  ซึ่งเป็นสาเหตุคลาสสิกที่ทำให้ .env ดูเหมือน "ไม่ทำงาน" ทั้งที่ไฟล์ถูกต้องแล้ว)
+load_dotenv(dotenv_path=ENV_PATH, override=True)
 
-connection_string = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-engine = create_engine(connection_string)
+def _env(key, default=None):
+    """ อ่านค่า env var โดยถือว่าค่าว่าง ('' หรือช่องว่างล้วน) เหมือนกับไม่มีค่า -> ใช้ default แทน """
+    val = os.getenv(key)
+    if val is None or val.strip() == "":
+        return default
+    return val.strip()
+
+DB_USER = _env("DB_USER", "postgres")
+DB_PASSWORD = _env("DB_PASSWORD")
+DB_HOST = _env("DB_HOST")
+DB_PORT = _env("DB_PORT", "5432")
+DB_NAME = _env("DB_NAME", "postgres")
+DB_SSLMODE = _env("DB_SSLMODE", "require")  # Supabase ต้องการ SSL เสมอ
+
+if not DB_PASSWORD or not DB_HOST:
+    raise RuntimeError(
+        f"ไม่พบ DB_PASSWORD หรือ DB_HOST ที่ถูกต้องใน {ENV_PATH}\n"
+        "ตรวจสอบว่า:\n"
+        "  1) มีไฟล์ .env อยู่ในโฟลเดอร์เดียวกับ fast.py จริง (ไม่ใช่ .env.example)\n"
+        "  2) แต่ละบรรทัดเป็นรูปแบบ KEY=value ไม่มีช่องว่างรอบเครื่องหมาย = และไม่มีเครื่องหมายคำพูดครอบ\n"
+        "  3) DB_PORT ต้องเป็นตัวเลข เช่น 5432 (ห้ามเว้นว่าง)"
+    )
+
+try:
+    int(DB_PORT)
+except (TypeError, ValueError):
+    raise RuntimeError(
+        f"DB_PORT ใน {ENV_PATH} ไม่ใช่ตัวเลขที่ถูกต้อง (ค่าที่อ่านได้: {DB_PORT!r}) "
+        "ปกติควรเป็น 5432 — ตรวจสอบว่าไม่มีช่องว่างหรือพิมพ์ตกหล่นในไฟล์ .env"
+    )
+
+# สร้าง URL ด้วย URL.create() แทนการต่อ f-string ตรงๆ เพราะ DB_PASSWORD ที่ Supabase
+# generate ให้มักมีอักขระพิเศษ (เช่น @ : / # ?) ซึ่งถ้าต่อ string เองด้วยมือจะทำให้ parser
+# อ่านตำแหน่ง host/port ผิดเพี้ยน (อาการที่เจอ: port กลายเป็นค่าว่าง) URL.create() จะ escape
+# อักขระพิเศษเหล่านี้ให้ถูกต้องอัตโนมัติ
+db_url = URL.create(
+    drivername="postgresql",
+    username=DB_USER,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=int(DB_PORT),
+    database=DB_NAME,
+    query={"sslmode": DB_SSLMODE},
+)
+
+print(f"[db] เชื่อมต่อไปที่ {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME} (sslmode={DB_SSLMODE})")
+print(f"[db] DB_PASSWORD ที่อ่านได้ยาว {len(DB_PASSWORD)} ตัวอักษร (ไม่โชว์ค่าจริงเพื่อความปลอดภัย)")
+
+try:
+    engine = create_engine(db_url)
+except Exception as e:
+    raise RuntimeError(
+        f"สร้าง database engine ไม่สำเร็จ: {e}\n"
+        f"ตรวจสอบค่าใน {ENV_PATH} อีกครั้ง (DB_HOST={DB_HOST!r}, DB_PORT={DB_PORT!r}, DB_NAME={DB_NAME!r})"
+    ) from e
 
 def get_db_connection():
     return psycopg2.connect(
-        user=DB_USER, password=DB_PASSWORD, host=DB_HOST, port=DB_PORT, database=DB_NAME
+        user=DB_USER, password=DB_PASSWORD, host=DB_HOST, port=int(DB_PORT),
+        database=DB_NAME, sslmode=DB_SSLMODE
     )
 
 # ==========================================
@@ -378,7 +435,7 @@ def upsert_thresholds_df(df: pd.DataFrame):
 # ==========================================
 # 4. API Endpoints
 # ==========================================
-@app.get("/api/metrics", dependencies=[Depends(get_current_user)])
+@app.get("/api/metrics")
 def get_network_metrics(me_ip: str = Query(..., description="ไอพีของอุปกรณ์เครือข่าย")):
     try:
         conn = get_db_connection()
@@ -401,7 +458,7 @@ def get_network_metrics(me_ip: str = Query(..., description="ไอพีขอ�
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.get("/api/data", dependencies=[Depends(get_current_user)])
+@app.get("/api/data")
 def get_all_data(table_name: str = Query("cpu_performance", description="ชื่อตารางที่ต้องการดึงข้อมูล")):
     """ Endpoint สำหรับดึงข้อมูลจากตารางที่ต้องการไปแสดงหน้าเว็บ """
     # ตรวจสอบความปลอดภัย ป้องกัน SQL Injection
@@ -427,7 +484,7 @@ def get_all_data(table_name: str = Query("cpu_performance", description="ชื�
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/upload", dependencies=[Depends(require_role("admin"))])
+@app.post("/api/upload")
 async def upload_file_automated(file: UploadFile = File(...)):
     # ป้องกัน OOM: จำกัดขนาดไฟล์อัปโหลดไว้ไม่เกิน 50MB
     MAX_FILE_SIZE = 50 * 1024 * 1024
@@ -443,11 +500,6 @@ async def upload_file_automated(file: UploadFile = File(...)):
     # ทำให้ปุ่ม "Import File (.xlsx)" เดิมในทุกหน้า frontend ใช้ได้กับไฟล์ threshold ได้เลย
     # โดยไม่ต้องแก้โค้ด frontend แม้แต่บรรทัดเดียว
     # ==========================================
-    # ตรวจก่อนว่าไฟล์ที่โยนเข้ามาเป็น "ไฟล์ threshold รายเดือน" (มีหลาย sheet
-    # ตรงกับ THRESHOLD_SHEETS) หรือเป็นไฟล์ performance ปกติ (1 sheet ต่อไฟล์)
-    # ถ้าเป็นไฟล์ threshold -> ประมวลผลแยกแล้ว return เลย ไม่ต้องไปเดาตาราง performance
-    # ทำให้ปุ่ม "Import File (.xlsx)" เดิมในทุกหน้า frontend ใช้ได้กับไฟล์ threshold ได้เลย
-    # โดยไม่ต้องแก้โค้ด frontend แม้แต่บรรทัดเดียว
     #
     # หมายเหตุ perf: โหลด workbook แค่ "ครั้งเดียว" ด้วย read_only=True (ไฟล์นี้มี sheet อื่น
     # ในไฟล์เดียวกันที่หนักมาก เช่น หมื่นแถว -- โหลดซ้ำสองรอบ หรือโหลดแบบไม่ read_only จะกิน RAM
@@ -603,7 +655,7 @@ async def upload_file_automated(file: UploadFile = File(...)):
         return {"status": "error", "message": f"การประมวลผลล้มเหลว: {str(e)}"}
 
 
-@app.post("/api/thresholds/upload", dependencies=[Depends(require_role("admin"))])
+@app.post("/api/thresholds/upload")
 async def upload_thresholds(file: UploadFile = File(...), header_row: int = Query(2, description="แถวที่เป็น header จริงในแต่ละ sheet")):
     """
     อัปโหลดไฟล์ workbook รายเดือน (ไฟล์เดียวกับที่ใช้ upload ข้อมูล performance ก็ได้ ถ้ามี
@@ -658,7 +710,7 @@ async def upload_thresholds(file: UploadFile = File(...), header_row: int = Quer
         return {"status": "error", "message": f"การประมวลผลล้มเหลว: {str(e)}"}
 
 
-@app.get("/api/thresholds", dependencies=[Depends(get_current_user)])
+@app.get("/api/thresholds")
 def get_thresholds(
     metric_key: str | None = Query(None, description="เช่น fan_fan_speed, client_output_optical_power"),
     me_ip: str | None = Query(None),

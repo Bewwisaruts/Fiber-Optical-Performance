@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Network Elements Monitoring | User Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg: #0A0E14;
+  --panel: #121821;
+  --panel-2: #171F2A;
+  --panel-3: #1C2531;
+  --border: #232D3A;
+  --border-soft: #1A2330;
+  --text: #E7EDF4;
+  --text-dim: #8996A6;
+  --text-faint: #55616F;
+  --accent: #34D6BE;
+  --accent-dim: #1E8577;
+  --accent-bg: rgba(52,214,190,0.10);
+  --ok: #3ECF8E;
+  --ok-bg: rgba(62,207,142,0.13);
+  --warn: #F2B94A;
+  --warn-bg: rgba(242,185,74,0.13);
+  --crit: #F2585F;
+  --crit-bg: rgba(242,88,95,0.15);
+  --owner: #C792EA;
+  --owner-bg: rgba(199,146,234,0.15);
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  --font-body: -apple-system, 'Segoe UI', ui-sans-serif, system-ui, Roboto, sans-serif;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+*{ box-sizing: border-box; }
+html{ background: var(--bg); }
+body{
+  margin:0;
+  background:
+    radial-gradient(1100px 500px at 15% -10%, rgba(52,214,190,0.07), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(52,214,190,0.04), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.shell{ max-width: 1120px; margin: 0 auto; padding: 28px 24px 64px; }
+.header{ display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:8px; flex-wrap:wrap; }
+.brand{ display:flex; align-items:center; gap:12px; }
+.brand-icon svg rect:nth-child(1){ opacity:.35; }
+.brand-icon svg rect:nth-child(2){ opacity:.6; }
+.brand-icon svg rect:nth-child(3){ opacity:.85; }
+.brand-icon svg rect:nth-child(4){ opacity:1; }
+.brand-title{ font-family: var(--font-display); font-weight:700; font-size:22px; margin:0; color:var(--text); }
+.brand-subtitle{ margin:3px 0 22px; font-size:13px; color:var(--text-dim); }
+.header-actions{ display:flex; align-items:center; gap:10px; font-family:var(--font-mono); font-size:12.5px; color:var(--text-dim); }
+.btn{ font-family: var(--font-body); font-size:13px; font-weight:600; cursor:pointer; border-radius: var(--radius-sm);
+  padding:8px 14px; border:1px solid var(--border); background: var(--panel-2); color: var(--text);
+  transition: background .15s, border-color .15s; }
+.btn:hover{ background: var(--panel-3); border-color:#2C3A4A; }
+.btn--primary{ background: var(--accent); border-color: var(--accent); color:#06201B; font-weight:700; }
+.btn--primary:hover{ background:#42E2CA; }
+.btn--danger{ background:transparent; border-color: rgba(242,88,95,0.4); color:var(--crit); }
+.btn--danger:hover{ background: var(--crit-bg); }
+.btn--owner{ background:transparent; border-color: rgba(199,146,234,0.45); color: var(--owner); }
+.btn--owner:hover{ background: var(--owner-bg); }
+.btn--sm{ padding:5px 10px; font-size:12px; }
+.btn:disabled{ opacity:.35; cursor:not-allowed; }
+a.btn{ text-decoration:none; display:inline-block; }
+
+.denied{ background: var(--panel); border:1px solid var(--border-soft); border-radius: var(--radius-lg); padding:40px; text-align:center; margin-top:40px; }
+.denied-title{ font-family:var(--font-display); font-weight:700; font-size:18px; color:var(--crit); margin-bottom:8px; }
+.denied-sub{ font-size:13.5px; color:var(--text-dim); margin-bottom:18px; }
+
+.panel{ background: var(--panel); border:1px solid var(--border-soft); border-radius: var(--radius-lg); padding:20px 22px; margin-bottom:20px; }
+.panel-title{ font-family: var(--font-display); font-weight:600; font-size:15.5px; color:var(--text); margin:0 0 4px; }
+.panel-hint{ font-size:12px; color:var(--text-faint); margin:0 0 16px; line-height:1.6; }
+
+.msg{ font-size:12.5px; font-family:var(--font-mono); padding:8px 12px; border-radius:var(--radius-sm); margin-bottom:14px; display:none; }
+.msg.is-visible{ display:block; }
+.msg.ok{ background: var(--ok-bg); color: var(--ok); }
+.msg.err{ background: var(--crit-bg); color: var(--crit); }
+
+.form-grid{ display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; align-items:end; }
+.field label{ display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin-bottom:6px; }
+.field input, .field select{
+  width:100%; padding:9px 11px; font-size:13.5px; font-family:var(--font-mono);
+  background:var(--panel-2); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text);
+}
+.field input:focus, .field select:focus{ outline:none; border-color:var(--accent); }
+
+.table-wrap{ overflow-x:auto; }
+table.users-table{ width:100%; border-collapse:collapse; font-size:13.5px; min-width:820px; }
+.users-table thead th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim);
+  font-weight:600; padding:10px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
+.users-table tbody td{ padding:10px 12px; border-bottom:1px solid var(--border-soft); vertical-align:middle; }
+.users-table tbody tr:last-child td{ border-bottom:none; }
+.users-table tbody tr.is-owner-row{ background: var(--owner-bg); }
+.uname{ font-family:var(--font-mono); color:var(--text); font-weight:600; }
+.uname-you{ color:var(--accent); }
+.fullname-cell{ color:var(--text-dim); }
+.role-select{ font-family:var(--font-mono); font-size:12.5px; background:var(--panel-2); border:1px solid var(--border);
+  border-radius:var(--radius-sm); color:var(--text); padding:5px 8px; cursor:pointer; }
+.role-select.role--admin{ color: var(--warn); }
+.role-select.role--viewer{ color: var(--text-dim); }
+.role-badge{ font-family:var(--font-mono); font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px;
+  background: var(--owner-bg); color: var(--owner); text-transform:uppercase; letter-spacing:.03em; }
+.status-pill{ font-family:var(--font-mono); font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:999px; text-transform:uppercase; border:none; cursor:pointer; }
+.status-pill--active{ background: var(--ok-bg); color: var(--ok); }
+.status-pill--suspended{ background: var(--crit-bg); color: var(--crit); }
+.created-cell{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-faint); white-space:nowrap; }
+.row-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+
+@media (max-width: 900px){
+  .form-grid{ grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px){
+  .shell{ padding:18px 14px 48px; }
+  .form-grid{ grid-template-columns: 1fr; }
+}
+</style>
+<script src="auth-client.js"></script>
+</head>
+<body>
+<div class="shell">
+
+  <div class="header">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">
+        <svg width="30" height="22" viewBox="0 0 28 20" fill="var(--accent)">
+          <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
+          <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
+          <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
+          <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
+        </svg>
+      </span>
+      <p class="brand-title">User Management</p>
+    </div>
+    <div class="header-actions">
+      <span id="navUsername">—</span>
+      <a href="index.html" class="btn btn--sm">← กลับหน้าแรก</a>
+      <button class="btn btn--sm" onclick="logout()" style="color:#F2585F;">Logout</button>
+    </div>
+  </div>
+  <p class="brand-subtitle">จัดการผู้ใช้ทั้งหมดในระบบ — owner มีได้เพียงคนเดียวเท่านั้น การเพิ่ม/ลบผู้ใช้ และการโอนสิทธิ์ owner ทุกครั้งต้องยืนยันด้วยรหัสผ่านของ owner</p>
+
+  <div id="deniedBox" class="denied" style="display:none">
+    <div class="denied-title">⛔ ไม่มีสิทธิ์เข้าถึงหน้านี้</div>
+    <div class="denied-sub">หน้านี้สงวนไว้สำหรับผู้ใช้ role "owner" เท่านั้น</div>
+    <a href="index.html" class="btn btn--primary">กลับหน้าแรก</a>
+  </div>
+
+  <div id="mainContent" style="display:none">
+
+    <div class="panel">
+      <h3 class="panel-title">➕ สร้างผู้ใช้ใหม่</h3>
+      <p class="panel-hint">สร้างได้เฉพาะ role admin หรือ viewer เท่านั้น (owner มีได้คนเดียว ต้องใช้การ "โอนสิทธิ์ owner" ในตารางด้านล่างแทน) ต้องใส่รหัสผ่านของบัญชี owner ที่ล็อกอินอยู่เพื่อยืนยันทุกครั้ง</p>
+      <div id="createMsg" class="msg"></div>
+      <form id="createForm" class="form-grid">
+        <div class="field">
+          <label for="newUsername">Username</label>
+          <input type="text" id="newUsername" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="newPassword">Password</label>
+          <input type="password" id="newPassword" required autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="newFullName">ชื่อเต็ม (ไม่บังคับ)</label>
+          <input type="text" id="newFullName" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="newRole">Role</label>
+          <select id="newRole">
+            <option value="viewer">viewer</option>
+            <option value="admin">admin</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="newConfirmPassword">รหัสผ่านของคุณ (owner) ยืนยัน</label>
+          <input type="password" id="newConfirmPassword" required autocomplete="current-password">
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <button type="submit" class="btn btn--primary" id="createBtn">สร้างผู้ใช้</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h3 class="panel-title">👥 ผู้ใช้ทั้งหมด</h3>
+      <p class="panel-hint">แถวสีม่วงคือ owner ปัจจุบัน (แก้ role/สถานะ/ลบ ผ่านตารางนี้ไม่ได้ ต้องใช้ปุ่ม "โอนสิทธิ์ Owner" ที่แถวของผู้ใช้ที่ต้องการมอบสิทธิ์ให้)</p>
+      <div id="listMsg" class="msg"></div>
+      <div class="table-wrap">
+        <table class="users-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>ชื่อเต็ม</th>
+              <th>Role</th>
+              <th>สถานะ</th>
+              <th>สร้างเมื่อ</th>
+              <th>จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="usersTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var API_BASE = 'http://localhost:8000';
+  var currentUsername = null;
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function fmtDate(s){
+    if (!s) return '\u2013\u2013';
+    return String(s).replace('T',' ').slice(0,16);
+  }
+  function showMsg(el, text, ok){
+    el.textContent = text;
+    el.className = 'msg is-visible ' + (ok ? 'ok' : 'err');
+  }
+
+  async function loadUsers(){
+    var listMsg = document.getElementById('listMsg');
+    listMsg.className = 'msg';
+    try{
+      var res = await authFetch(API_BASE + '/api/users');
+      var data = await res.json();
+      if (!res.ok || !data || data.status !== 'success'){
+        showMsg(listMsg, (data && data.detail) || 'โหลดรายชื่อผู้ใช้ไม่สำเร็จ', false);
+        return;
+      }
+      renderUsers(data.users || []);
+    }catch(err){
+      console.error(err);
+      showMsg(listMsg, 'เชื่อมต่อ backend ไม่ได้ (localhost:8000)', false);
+    }
+  }
+
+  function renderUsers(users){
+    var tbody = document.getElementById('usersTbody');
+    tbody.innerHTML = users.map(function(u){
+      var isYou = u.username === currentUsername;
+      var isOwner = u.role === 'owner';
+
+      var roleCell = isOwner
+        ? '<span class="role-badge">Owner</span>'
+        : '<select class="role-select role--'+u.role+'" data-field="role">' +
+            ['viewer','admin'].map(function(r){
+              return '<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+r+'</option>';
+            }).join('') +
+          '</select>';
+
+      var statusCell = isOwner
+        ? '<span class="status-pill status-pill--active">Active</span>'
+        : '<button class="status-pill status-pill--'+(u.is_active?'active':'suspended')+'" data-field="status" '+(isYou?'disabled title="ไม่สามารถระงับบัญชีตัวเองได้"':'')+'>'+
+            (u.is_active?'Active':'Suspended')+'</button>';
+
+      var actionsCell = isOwner
+        ? '<span style="color:var(--text-faint); font-size:11.5px;">— (ใช้ปุ่ม "โอนสิทธิ์ Owner" ที่แถวผู้ใช้อื่นแทน)</span>'
+        : '<div class="row-actions">' +
+            '<button class="btn btn--sm" data-action="reset-pw">Reset PW</button>' +
+            '<button class="btn btn--sm btn--owner" data-action="transfer" '+(!u.is_active?'disabled title="ต้องเปิดใช้งานบัญชีก่อน"':'')+'>โอนสิทธิ์ Owner</button>' +
+            '<button class="btn btn--sm btn--danger" data-action="delete">Delete</button>' +
+          '</div>';
+
+      return '<tr data-username="'+esc(u.username)+'" class="'+(isOwner?'is-owner-row':'')+'">' +
+        '<td class="uname'+(isYou?' uname-you':'')+'">'+esc(u.username)+(isYou?' (คุณ)':'')+'</td>' +
+        '<td class="fullname-cell">'+esc(u.full_name||'\u2013\u2013')+'</td>' +
+        '<td>'+roleCell+'</td>' +
+        '<td>'+statusCell+'</td>' +
+        '<td class="created-cell">'+fmtDate(u.created_at)+'</td>' +
+        '<td>'+actionsCell+'</td>' +
+      '</tr>';
+    }).join('');
+
+    tbody.querySelectorAll('select[data-field="role"]').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        var tr = sel.closest('tr');
+        var username = tr.dataset.username;
+        var newRole = sel.value;
+        if (!confirm('เปลี่ยน role ของ "'+username+'" เป็น "'+newRole+'" ใช่หรือไม่?')){
+          loadUsers();
+          return;
+        }
+        patchUser(username, { role: newRole });
+      });
+    });
+
+    tbody.querySelectorAll('button[data-field="status"]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var tr = btn.closest('tr');
+        var username = tr.dataset.username;
+        var isActive = btn.textContent.trim() === 'Active';
+        var next = !isActive;
+        if (!confirm((next?'เปิดใช้งาน':'ระงับการใช้งาน')+' บัญชี "'+username+'" ใช่หรือไม่?')) return;
+        patchUser(username, { is_active: next });
+      });
+    });
+
+    tbody.querySelectorAll('button[data-action="reset-pw"]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var tr = btn.closest('tr');
+        var username = tr.dataset.username;
+        var pw = prompt('ตั้งรหัสผ่านใหม่สำหรับ "'+username+'" (อย่างน้อย 4 ตัวอักษร):');
+        if (!pw) return;
+        patchUser(username, { password: pw });
+      });
+    });
+
+    tbody.querySelectorAll('button[data-action="delete"]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var tr = btn.closest('tr');
+        var username = tr.dataset.username;
+        if (!confirm('ลบผู้ใช้ "'+username+'" ถาวร ใช่หรือไม่? การกระทำนี้ย้อนกลับไม่ได้')) return;
+        var confirmPw = prompt('ยืนยันด้วยรหัสผ่านของบัญชี owner (ของคุณ) เพื่อลบ "'+username+'":');
+        if (!confirmPw) return;
+        deleteUser(username, confirmPw);
+      });
+    });
+
+    tbody.querySelectorAll('button[data-action="transfer"]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var tr = btn.closest('tr');
+        var username = tr.dataset.username;
+        if (!confirm('โอนสิทธิ์ owner ทั้งหมดให้ "'+username+'" ใช่หรือไม่?\nบัญชีของคุณ ('+currentUsername+') จะถูกลดเป็น admin ทันที')) return;
+        var confirmPw = prompt('ยืนยันด้วยรหัสผ่านของบัญชี owner (ของคุณ) เพื่อโอนสิทธิ์ owner ให้ "'+username+'":');
+        if (!confirmPw) return;
+        transferOwnership(username, confirmPw);
+      });
+    });
+  }
+
+  async function patchUser(username, payload){
+    var listMsg = document.getElementById('listMsg');
+    try{
+      var res = await authFetch(API_BASE + '/api/users/' + encodeURIComponent(username), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (res.ok && data && data.status === 'success'){
+        showMsg(listMsg, data.message || 'อัปเดตสำเร็จ', true);
+      } else {
+        showMsg(listMsg, (data && data.detail) || 'อัปเดตไม่สำเร็จ', false);
+        var errorMsg = data && data.detail ? (typeof data.detail === 'object' ? JSON.stringify(data.detail) : data.detail) : 'อัปเดตไม่สำเร็จ';
+        showMsg(listMsg, errorMsg, false);
+      }
+    }catch(err){
+      console.error(err);
+      showMsg(listMsg, 'เชื่อมต่อ backend ไม่ได้', false);
+    }
+    loadUsers();
+  }
+
+  async function deleteUser(username, confirmPassword){
+    var listMsg = document.getElementById('listMsg');
+    try{
+      var res = await authFetch(API_BASE + '/api/users/' + encodeURIComponent(username), {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm_password: confirmPassword })
+      });
+      var data = await res.json();
+      if (res.ok && data && data.status === 'success'){
+        showMsg(listMsg, data.message || 'ลบสำเร็จ', true);
+      } else {
+        showMsg(listMsg, (data && data.detail) || 'ลบไม่สำเร็จ', false);
+      }
+    }catch(err){
+      console.error(err);
+      showMsg(listMsg, 'เชื่อมต่อ backend ไม่ได้', false);
+    }
+    loadUsers();
+  }
+
+  async function transferOwnership(targetUsername, confirmPassword){
+    var listMsg = document.getElementById('listMsg');
+    try{
+      var res = await authFetch(API_BASE + '/api/users/transfer-ownership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_username: targetUsername, confirm_password: confirmPassword })
+      });
+      var data = await res.json();
+      if (res.ok && data && data.status === 'success'){
+        showMsg(listMsg, data.message || 'โอนสิทธิ์ owner สำเร็จ', true);
+        // ผู้ใช้ปัจจุบันไม่ใช่ owner แล้ว → เด้งกลับหน้าแรก เพราะจะไม่มีสิทธิ์เข้าหน้านี้อีกต่อไป
+        setTimeout(function(){
+          alert('คุณถูกลดสิทธิ์เป็น admin แล้ว กรุณาล็อกอินใหม่เพื่ออัปเดตสิทธิ์การใช้งาน');
+          logout();
+        }, 600);
+      } else {
+        showMsg(listMsg, (data && data.detail) || 'โอนสิทธิ์ owner ไม่สำเร็จ', false);
+        loadUsers();
+      }
+    }catch(err){
+      console.error(err);
+      showMsg(listMsg, 'เชื่อมต่อ backend ไม่ได้', false);
+      loadUsers();
+    }
+  }
+
+  function initCreateForm(){
+    var form = document.getElementById('createForm');
+    var createMsg = document.getElementById('createMsg');
+    var createBtn = document.getElementById('createBtn');
+    form.addEventListener('submit', async function(e){
+      e.preventDefault();
+      createMsg.className = 'msg';
+      var payload = {
+        username: document.getElementById('newUsername').value.trim(),
+        password: document.getElementById('newPassword').value,
+        full_name: document.getElementById('newFullName').value.trim(),
+        role: document.getElementById('newRole').value,
+        confirm_password: document.getElementById('newConfirmPassword').value
+      };
+      createBtn.disabled = true;
+      createBtn.textContent = 'กำลังสร้าง...';
+      try{
+        var res = await authFetch(API_BASE + '/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        var data = await res.json();
+        if (res.ok && data && data.status === 'success'){
+          showMsg(createMsg, data.message || 'สร้างผู้ใช้สำเร็จ', true);
+          form.reset();
+          loadUsers();
+        } else {
+          showMsg(createMsg, (data && data.detail) || 'สร้างผู้ใช้ไม่สำเร็จ', false);
+          var errorMsg = data && data.detail ? (typeof data.detail === 'object' ? JSON.stringify(data.detail) : data.detail) : 'สร้างผู้ใช้ไม่สำเร็จ';
+            showMsg(createMsg, errorMsg, false);
+        }
+      }catch(err){
+        console.error(err);
+        showMsg(createMsg, 'เชื่อมต่อ backend ไม่ได้', false);
+      }finally{
+        createBtn.disabled = false;
+        createBtn.textContent = 'สร้างผู้ใช้';
+      }
+    });
+  }
+
+  function init(){
+    currentUsername = getUsername();
+    if (getRole() !== 'owner'){
+      document.getElementById('deniedBox').style.display = 'block';
+      document.getElementById('mainContent').style.display = 'none';
+      return;
+    }
+    document.getElementById('deniedBox').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+    initCreateForm();
+    loadUsers();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>

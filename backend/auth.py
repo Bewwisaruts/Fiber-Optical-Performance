@@ -1,5 +1,3 @@
-
-
 import os
 from datetime import datetime, timedelta, timezone
 import bcrypt
@@ -160,3 +158,118 @@ def read_me(current_user=Depends(get_current_user)):
         "full_name": current_user["full_name"],
         "role": current_user["role"],
     }
+
+# ==========================================
+# 7. Endpoints สำหรับจัดการผู้ใช้งาน (Users Management)
+# ==========================================
+
+@router.get("/api/users")
+def get_all_users(current_user=Depends(require_role("owner"))):
+    """ดึงรายชื่อผู้ใช้ทั้งหมด (ให้เฉพาะ owner เข้าถึงได้)"""
+    with auth_engine.connect() as conn:
+        # ไม่ดึง hashed_password ออกมาเพื่อความปลอดภัย
+        rows = conn.execute(text("""
+            SELECT id, username, full_name, role, is_active, created_at 
+            FROM app_users 
+            ORDER BY created_at ASC
+        """)).mappings().all()
+        
+        return {"status": "success", "users": [dict(row) for row in rows]}
+
+
+@router.post("/api/users")
+def api_create_user(req: UserCreateRequest , current_user=Depends(require_role("owner"))):
+    """สร้างผู้ใช้ใหม่"""
+    # 1. ยืนยันรหัสผ่านของ owner ก่อน
+    if not verify_password(req.confirm_password, current_user["hashed_password"]):
+        raise HTTPException(status_code=400, detail="รหัสผ่านยืนยันตัวตน (Owner) ไม่ถูกต้อง")
+    
+    # 2. ตรวจสอบ username ซ้ำ
+    if get_user(req.username):
+        raise HTTPException(status_code=400, detail=f"Username '{req.username}' มีอยู่แล้วในระบบ")
+    
+    # 3. บันทึกลงฐานข้อมูล
+    create_user(username=req.username, password=req.password, full_name=req.full_name, role=req.role)
+    return {"status": "success", "message": f"สร้างผู้ใช้ '{req.username}' สำเร็จ"}
+
+
+@router.patch("/api/users/{target_username}")
+def api_update_user(target_username: str, req: UserUpdateRequest , current_user=Depends(require_role("owner"))):
+    """แก้ไข Role, Password หรือ สถานะ ของผู้ใช้งาน"""
+    target_user = get_user(target_username)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้งานนี้ในระบบ")
+    
+    if target_user["role"] == "owner":
+        raise HTTPException(status_code=400, detail="ไม่สามารถแก้ไขข้อมูลบัญชี Owner ด้วยวิธีนี้ได้")
+
+    updates = []
+    params = {"u": target_username}
+
+    if req.role is not None:
+        if req.role not in ["admin", "viewer"]:
+            raise HTTPException(status_code=400, detail="Role ต้องเป็น admin หรือ viewer เท่านั้น")
+        updates.append("role = :r")
+        params["r"] = req.role
+
+    if req.password is not None:
+        updates.append("hashed_password = :p")
+        params["p"] = hash_password(req.password)
+
+    if req.is_active is not None:
+        updates.append("is_active = :a")
+        params["a"] = req.is_active
+
+    if updates:
+        query = f"UPDATE app_users SET {', '.join(updates)} WHERE username = :u"
+        with auth_engine.begin() as conn:
+            conn.execute(text(query), params)
+
+    return {"status": "success", "message": "อัปเดตข้อมูลสำเร็จ"}
+
+
+@router.delete("/api/users/{target_username}")
+def api_delete_user(target_username: str, req: UserDeleteRequest, current_user=Depends(require_role("owner"))):
+    """ลบผู้ใช้งาน"""
+    if not verify_password(req.confirm_password, current_user["hashed_password"]):
+        raise HTTPException(status_code=400, detail="รหัสผ่านยืนยันตัวตน (Owner) ไม่ถูกต้อง")
+
+    target_user = get_user(target_username)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้งานนี้ในระบบ")
+    
+    if target_user["role"] == "owner":
+        raise HTTPException(status_code=400, detail="ไม่สามารถลบบัญชี Owner ได้ ต้องโอนสิทธิ์ให้ผู้อื่นก่อน")
+
+    with auth_engine.begin() as conn:
+        conn.execute(text("DELETE FROM app_users WHERE username = :u"), {"u": target_username})
+        
+    return {"status": "success", "message": f"ลบผู้ใช้ '{target_username}' สำเร็จ"}
+
+
+@router.post("/api/users/transfer-ownership")
+def api_transfer_ownership(req: TransferOwnershipRequest, current_user=Depends(require_role("owner"))):
+    """โอนสิทธิ์ Owner ให้ผู้ใช้อื่น"""
+    if not verify_password(req.confirm_password, current_user["hashed_password"]):
+        raise HTTPException(status_code=400, detail="รหัสผ่านยืนยันตัวตน (Owner) ไม่ถูกต้อง")
+
+    target_user = get_user(req.target_username)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้งานปลายทางในระบบ")
+    
+    if target_user["role"] == "owner":
+        raise HTTPException(status_code=400, detail="ผู้ใช้งานนี้เป็น Owner อยู่แล้ว")
+
+    with auth_engine.begin() as conn:
+        # ลดสิทธิ์ Owner ปัจจุบันให้กลายเป็น admin
+        conn.execute(
+            text("UPDATE app_users SET role = 'admin' WHERE username = :u"), 
+            {"u": current_user["username"]}
+        )
+        # เลื่อนขั้นเป้าหมายให้เป็น owner
+        conn.execute(
+            text("UPDATE app_users SET role = 'owner' WHERE username = :u"), 
+            {"u": req.target_username}
+        )
+
+    return {"status": "success", "message": f"โอนสิทธิ์ Owner ให้ '{req.target_username}' สำเร็จ"}
