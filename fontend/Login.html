@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>เข้าสู่ระบบ | Network Elements Monitoring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0E14; --panel:#121821; --panel-2:#171F2A; --border:#232D3A; --border-soft:#1A2330;
+  --text:#E7EDF4; --text-dim:#8996A6; --text-faint:#55616F;
+  --accent:#34D6BE; --accent-dim:#1E8577; --accent-bg:rgba(52,214,190,0.10);
+  --crit:#F2585F; --crit-bg:rgba(242,88,95,0.15);
+  --font-display:'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono:'JetBrains Mono', ui-monospace, monospace;
+  --font-body:-apple-system,'Segoe UI',ui-sans-serif,system-ui,Roboto,sans-serif;
+  --radius:10px; --radius-lg:14px;
+}
+*{ box-sizing:border-box; }
+html{ background:var(--bg); }
+body{
+  margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+  background:
+    radial-gradient(1100px 500px at 15% -10%, rgba(52,214,190,0.08), transparent 60%),
+    radial-gradient(900px 500px at 100% 10%, rgba(52,214,190,0.05), transparent 55%),
+    var(--bg);
+  color:var(--text); font-family:var(--font-body); -webkit-font-smoothing:antialiased;
+}
+.login-card{
+  width:100%; max-width:380px; background:var(--panel); border:1px solid var(--border-soft);
+  border-radius:var(--radius-lg); padding:32px 30px; box-shadow:0 20px 60px rgba(0,0,0,0.4);
+}
+.brand{ display:flex; align-items:center; gap:10px; margin-bottom:26px; }
+.brand svg rect:nth-child(1){ opacity:.35; } .brand svg rect:nth-child(2){ opacity:.6; }
+.brand svg rect:nth-child(3){ opacity:.85; } .brand svg rect:nth-child(4){ opacity:1; }
+.brand-title{ font-family:var(--font-display); font-weight:700; font-size:17px; margin:0; }
+.brand-sub{ font-size:11.5px; color:var(--text-dim); margin:2px 0 0; }
+
+h1{ font-family:var(--font-display); font-size:20px; font-weight:600; margin:0 0 6px; }
+.sub{ font-size:13px; color:var(--text-dim); margin:0 0 24px; }
+
+.field{ margin-bottom:16px; }
+.field label{ display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px; }
+.field input{
+  width:100%; padding:11px 13px; font-size:14px; font-family:var(--font-mono);
+  background:var(--panel-2); border:1px solid var(--border); border-radius:var(--radius);
+  color:var(--text); outline:none; transition:border-color .15s;
+}
+.field input:focus{ border-color:var(--accent); }
+
+.btn-submit{
+  width:100%; padding:12px; font-family:var(--font-body); font-size:14px; font-weight:700;
+  background:var(--accent); color:#06201B; border:none; border-radius:var(--radius);
+  cursor:pointer; transition:background .15s; margin-top:6px;
+}
+.btn-submit:hover{ background:#42E2CA; }
+.btn-submit:disabled{ opacity:.6; cursor:not-allowed; }
+
+.error-box{
+  background:var(--crit-bg); color:var(--crit); border-radius:var(--radius); padding:10px 13px;
+  font-size:12.5px; margin-bottom:16px; display:none;
+}
+.error-box.is-visible{ display:block; }
+
+.footnote{ margin-top:20px; text-align:center; font-size:11.5px; color:var(--text-faint); }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="brand">
+    <svg width="26" height="19" viewBox="0 0 28 20" fill="var(--accent)">
+      <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
+      <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
+      <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
+      <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
+    </svg>
+    <div>
+      <p class="brand-title">Network Elements Monitoring</p>
+      <p class="brand-sub">Fiber Optic Performance Dashboard</p>
+    </div>
+  </div>
+
+  <h1>เข้าสู่ระบบ</h1>
+  <p class="sub">กรอกชื่อผู้ใช้และรหัสผ่านของคุณ</p>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <form id="loginForm">
+    <div class="field">
+      <label for="username">ชื่อผู้ใช้</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="field">
+      <label for="password">รหัสผ่าน</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn-submit" id="submitBtn">เข้าสู่ระบบ</button>
+  </form>
+
+  <p class="footnote">ติดต่อ Owner หากยังไม่มีบัญชี หรือลืมรหัสผ่าน</p>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const API_BASE = 'http://localhost:8000';
+
+  // ถ้า login ค้างอยู่แล้ว (มี token เก่า) ให้เด้งเข้าหน้าเดิมทันที ไม่ต้อง login ซ้ำ
+  const existingToken = localStorage.getItem('access_token');
+  if (existingToken) {
+    const params = new URLSearchParams(location.search);
+    location.href = params.get('next') || 'index.html';
+  }
+
+  const form = document.getElementById('loginForm');
+  const errorBox = document.getElementById('errorBox');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function showError(msg){
+    errorBox.textContent = msg;
+    errorBox.classList.add('is-visible');
+  }
+  function hideError(){
+    errorBox.classList.remove('is-visible');
+  }
+
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    hideError();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'กำลังตรวจสอบ...';
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    try{
+      const res = await fetch(API_BASE + '/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password })
+      });
+      const data = await res.json();
+
+      if (!res.ok){
+        showError(data.detail || 'เข้าสู่ระบบไม่สำเร็จ');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'เข้าสู่ระบบ';
+        return;
+      }
+
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      const params = new URLSearchParams(location.search);
+      location.href = params.get('next') || 'index.html';
+    }catch(err){
+      console.error(err);
+      showError('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (localhost:8000) — ตรวจสอบว่า uvicorn รันอยู่หรือไม่');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'เข้าสู่ระบบ';
+    }
+  });
+})();
+</script>
+</body>
+</html>

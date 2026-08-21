@@ -1,14 +1,30 @@
-from fastapi import FastAPI, Query, UploadFile, File, HTTPException
+import os
+from pathlib import Path
+from typing import List, Optional
+from dotenv import load_dotenv
+from fastapi import FastAPI, Query, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 import psycopg2
+import psycopg2.errors
 from psycopg2.extras import RealDictCursor
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 import io
 import re
 from collections import defaultdict
 from datetime import date, datetime
 import openpyxl
+
+from auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    require_roles,
+)
 
 app = FastAPI(title="Network Performance API (Enterprise Version)")
 
@@ -21,21 +37,97 @@ app.add_middleware(
 )
 
 # ==========================================
-# 1. Database Configuration
+# 1. Database Configuration (Supabase / Postgres via .env)
 # ==========================================
-DB_USER = "postgres"
-DB_PASSWORD = "bew30012548"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "Client-Card"
+# โหลดค่าจากไฟล์ .env โดยชี้ path ตรงไปที่โฟลเดอร์เดียวกับไฟล์นี้เสมอ
+# (ไม่พึ่ง current working directory เพราะบางทีรัน uvicorn จากคนละโฟลเดอร์ ทำให้หา .env ไม่เจอ)
+# ถ้ายังไม่มีไฟล์ .env: copy .env.example -> .env แล้วกรอกรหัสผ่าน Supabase จริง
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+# override=True: บังคับให้ค่าใน .env ทับ environment variable เดิมที่อาจค้างอยู่ในระบบ/เทอร์มินัล
+# (ถ้าไม่ใส่ override, load_dotenv จะไม่ทับค่าที่มี env var ชื่อเดียวกันตั้งอยู่แล้วในเครื่อง
+#  ซึ่งเป็นสาเหตุคลาสสิกที่ทำให้ .env ดูเหมือน "ไม่ทำงาน" ทั้งที่ไฟล์ถูกต้องแล้ว)
+load_dotenv(dotenv_path=ENV_PATH, override=True)
 
-connection_string = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-engine = create_engine(connection_string)
+def _env(key, default=None):
+    """ อ่านค่า env var โดยถือว่าค่าว่าง ('' หรือช่องว่างล้วน) เหมือนกับไม่มีค่า -> ใช้ default แทน """
+    val = os.getenv(key)
+    if val is None or val.strip() == "":
+        return default
+    return val.strip()
+
+DB_USER = _env("DB_USER", "postgres")
+DB_PASSWORD = _env("DB_PASSWORD")
+DB_HOST = _env("DB_HOST")
+DB_PORT = _env("DB_PORT", "5432")
+DB_NAME = _env("DB_NAME", "postgres")
+DB_SSLMODE = _env("DB_SSLMODE", "require")  # Supabase ต้องการ SSL เสมอ
+
+if not DB_PASSWORD or not DB_HOST:
+    raise RuntimeError(
+        f"ไม่พบ DB_PASSWORD หรือ DB_HOST ที่ถูกต้องใน {ENV_PATH}\n"
+        "ตรวจสอบว่า:\n"
+        "  1) มีไฟล์ .env อยู่ในโฟลเดอร์เดียวกับ fast.py จริง (ไม่ใช่ .env.example)\n"
+        "  2) แต่ละบรรทัดเป็นรูปแบบ KEY=value ไม่มีช่องว่างรอบเครื่องหมาย = และไม่มีเครื่องหมายคำพูดครอบ\n"
+        "  3) DB_PORT ต้องเป็นตัวเลข เช่น 5432 (ห้ามเว้นว่าง)"
+    )
+
+try:
+    int(DB_PORT)
+except (TypeError, ValueError):
+    raise RuntimeError(
+        f"DB_PORT ใน {ENV_PATH} ไม่ใช่ตัวเลขที่ถูกต้อง (ค่าที่อ่านได้: {DB_PORT!r}) "
+        "ปกติควรเป็น 5432 — ตรวจสอบว่าไม่มีช่องว่างหรือพิมพ์ตกหล่นในไฟล์ .env"
+    )
+
+# สร้าง URL ด้วย URL.create() แทนการต่อ f-string ตรงๆ เพราะ DB_PASSWORD ที่ Supabase
+# generate ให้มักมีอักขระพิเศษ (เช่น @ : / # ?) ซึ่งถ้าต่อ string เองด้วยมือจะทำให้ parser
+# อ่านตำแหน่ง host/port ผิดเพี้ยน (อาการที่เจอ: port กลายเป็นค่าว่าง) URL.create() จะ escape
+# อักขระพิเศษเหล่านี้ให้ถูกต้องอัตโนมัติ
+db_url = URL.create(
+    drivername="postgresql",
+    username=DB_USER,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=int(DB_PORT),
+    database=DB_NAME,
+    query={"sslmode": DB_SSLMODE},
+)
+
+print(f"[db] เชื่อมต่อไปที่ {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME} (sslmode={DB_SSLMODE})")
+print(f"[db] DB_PASSWORD ที่อ่านได้ยาว {len(DB_PASSWORD)} ตัวอักษร (ไม่โชว์ค่าจริงเพื่อความปลอดภัย)")
+
+try:
+    engine = create_engine(db_url)
+except Exception as e:
+    raise RuntimeError(
+        f"สร้าง database engine ไม่สำเร็จ: {e}\n"
+        f"ตรวจสอบค่าใน {ENV_PATH} อีกครั้ง (DB_HOST={DB_HOST!r}, DB_PORT={DB_PORT!r}, DB_NAME={DB_NAME!r})"
+    ) from e
 
 def get_db_connection():
     return psycopg2.connect(
-        user=DB_USER, password=DB_PASSWORD, host=DB_HOST, port=DB_PORT, database=DB_NAME
+        user=DB_USER, password=DB_PASSWORD, host=DB_HOST, port=int(DB_PORT),
+        database=DB_NAME, sslmode=DB_SSLMODE
     )
+
+# ==========================================
+# 1b. Pydantic models (auth / user management / export)
+# ==========================================
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str  # 'admin' หรือ 'visitor' เท่านั้น (owner มอบสิทธิ์ผ่าน endpoint แยก)
+
+class ChangeRoleRequest(BaseModel):
+    new_role: str  # 'owner' | 'admin' | 'visitor'
+    owner_password: str  # รหัสผ่านของ owner ที่ล็อกอินอยู่ ใช้ยืนยันตัวตนก่อนเปลี่ยนสิทธิ์
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
 
 # ==========================================
 # 2. Base Configuration & Table Registry
@@ -372,10 +464,211 @@ def upsert_thresholds_df(df: pd.DataFrame):
 
 
 # ==========================================
-# 4. API Endpoints
+# 4. Authentication Endpoints
+# ==========================================
+@app.post("/api/auth/login")
+def login(body: LoginRequest):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(
+            "SELECT id, username, password_hash, role FROM users WHERE username = %s",
+            (body.username,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"เชื่อมต่อฐานข้อมูลล้มเหลว: {e}")
+
+    if not row or not verify_password(body.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+
+    token = create_access_token(row["id"], row["username"], row["role"])
+    return {
+        "status": "success",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {"id": row["id"], "username": row["username"], "role": row["role"]},
+    }
+
+
+@app.get("/api/auth/me")
+def get_me(user: dict = Depends(get_current_user)):
+    return {"status": "success", "user": user}
+
+
+# ==========================================
+# 5. User Management Endpoints (Owner เท่านั้น ยกเว้นที่ระบุไว้)
+# ==========================================
+@app.get("/api/users")
+def list_users(user: dict = Depends(require_roles("owner"))):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(
+            "SELECT id, username, role, created_at FROM users ORDER BY "
+            "CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, username"
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return {"status": "success", "data": rows}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/users")
+def create_user(body: CreateUserRequest, user: dict = Depends(require_roles("owner"))):
+    if body.role not in ("admin", "visitor"):
+        raise HTTPException(
+            status_code=400,
+            detail="role ที่สร้างได้ตรงนี้มีแค่ 'admin' หรือ 'visitor' เท่านั้น "
+                   "(การมอบสิทธิ์ Owner ทำผ่าน PUT /api/users/{id}/role แยกต่างหาก)",
+        )
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร")
+    if not body.username or len(body.username.strip()) < 3:
+        raise HTTPException(status_code=400, detail="ชื่อผู้ใช้ต้องยาวอย่างน้อย 3 ตัวอักษร")
+
+    password_hash = hash_password(body.password)
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s) RETURNING id",
+            (body.username.strip(), password_hash, body.role),
+        )
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except psycopg2.errors.UniqueViolation:
+        raise HTTPException(status_code=400, detail=f"มีชื่อผู้ใช้ '{body.username}' อยู่แล้วในระบบ")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "success", "message": f"สร้างผู้ใช้ '{body.username}' (สิทธิ์: {body.role}) สำเร็จ", "id": new_id}
+
+
+@app.put("/api/users/{target_id}/role")
+def change_role(target_id: int, body: ChangeRoleRequest, user: dict = Depends(require_roles("owner"))):
+    if body.new_role not in ("owner", "admin", "visitor"):
+        raise HTTPException(status_code=400, detail="role ไม่ถูกต้อง ต้องเป็น owner, admin หรือ visitor")
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # ยืนยันตัวตนด้วยรหัสผ่านของ owner ที่ล็อกอินอยู่ ก่อนอนุญาตให้เปลี่ยน role ของใครก็ตาม
+    cursor.execute("SELECT password_hash FROM users WHERE id = %s", (user["id"],))
+    acting_owner = cursor.fetchone()
+    if not acting_owner or not verify_password(body.owner_password, acting_owner["password_hash"]):
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=401, detail="รหัสผ่านยืนยันตัวตนไม่ถูกต้อง")
+
+    cursor.execute("SELECT id, username, role FROM users WHERE id = %s", (target_id,))
+    target = cursor.fetchone()
+    if not target:
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้ที่ต้องการแก้ไข")
+
+    try:
+        if body.new_role == "owner":
+            if target["id"] == user["id"]:
+                raise HTTPException(status_code=400, detail="คุณเป็น Owner อยู่แล้ว")
+            # โอนสิทธิ์ Owner: ลด role คนเดิมเป็น admin ก่อน แล้วค่อยเลื่อนคนใหม่ขึ้นเป็น owner
+            # (ต้องทำ 2 ขั้นตอนนี้ในลำดับนี้เท่านั้น เพราะ DB บังคับว่ามี owner ได้แค่ 1 คน)
+            cursor.execute("UPDATE users SET role = 'admin', updated_at = now() WHERE id = %s", (user["id"],))
+            cursor.execute("UPDATE users SET role = 'owner', updated_at = now() WHERE id = %s", (target_id,))
+            msg = f"โอนสิทธิ์ Owner ให้ '{target['username']}' สำเร็จ (บัญชีของคุณถูกลดเป็น admin โดยอัตโนมัติ)"
+        else:
+            if target["role"] == "owner":
+                raise HTTPException(
+                    status_code=400,
+                    detail="ต้องโอนสิทธิ์ Owner ให้คนอื่นก่อน (ผ่านการตั้ง role เป็น owner ให้คนนั้น) "
+                           "ถึงจะลดสิทธิ์ตัวเองได้ ระบบต้องมี owner อยู่เสมออย่างน้อย 1 คน",
+                )
+            cursor.execute(
+                "UPDATE users SET role = %s, updated_at = now() WHERE id = %s",
+                (body.new_role, target_id),
+            )
+            msg = f"เปลี่ยนสิทธิ์ของ '{target['username']}' เป็น {body.new_role} สำเร็จ"
+        conn.commit()
+    except HTTPException:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    cursor.close()
+    conn.close()
+    return {"status": "success", "message": msg}
+
+
+@app.post("/api/users/{target_id}/reset-password")
+def reset_password(target_id: int, body: ResetPasswordRequest, user: dict = Depends(require_roles("owner"))):
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร")
+
+    password_hash = hash_password(body.new_password)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET password_hash = %s, updated_at = now() WHERE id = %s RETURNING username",
+        (password_hash, target_id),
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้")
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "success", "message": f"ตั้งรหัสผ่านใหม่ให้ '{row[0]}' สำเร็จ"}
+
+
+@app.delete("/api/users/{target_id}")
+def delete_user(target_id: int, user: dict = Depends(require_roles("owner"))):
+    if target_id == user["id"]:
+        raise HTTPException(status_code=400, detail="ไม่สามารถลบบัญชีของตัวเองได้")
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT username, role FROM users WHERE id = %s", (target_id,))
+    row = cursor.fetchone()
+    if not row:
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้")
+    if row["role"] == "owner":
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="ลบบัญชี Owner ไม่ได้ ต้องโอนสิทธิ์ให้คนอื่นก่อน")
+
+    cursor.execute("DELETE FROM users WHERE id = %s", (target_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "success", "message": f"ลบผู้ใช้ '{row['username']}' สำเร็จ"}
+
+
+# ==========================================
+# 6. API Endpoints (ข้อมูล Performance เดิม)
 # ==========================================
 @app.get("/api/metrics")
-def get_network_metrics(me_ip: str = Query(..., description="ไอพีของอุปกรณ์เครือข่าย")):
+def get_network_metrics(
+    me_ip: str = Query(..., description="ไอพีของอุปกรณ์เครือข่าย"),
+    user: dict = Depends(get_current_user),
+):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -398,8 +691,11 @@ def get_network_metrics(me_ip: str = Query(..., description="ไอพีขอ�
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/data")
-def get_all_data(table_name: str = Query("cpu_performance", description="ชื่อตารางที่ต้องการดึงข้อมูล")):
-    """ Endpoint สำหรับดึงข้อมูลจากตารางที่ต้องการไปแสดงหน้าเว็บ """
+def get_all_data(
+    table_name: str = Query("cpu_performance", description="ชื่อตารางที่ต้องการดึงข้อมูล"),
+    user: dict = Depends(get_current_user),
+):
+    """ Endpoint สำหรับดึงข้อมูลจากตารางที่ต้องการไปแสดงหน้าเว็บ (ต้อง login ก่อน ทุก role ดูได้) """
     # ตรวจสอบความปลอดภัย ป้องกัน SQL Injection
     allowed_tables = [config["table_name"] for config in TABLE_REGISTRY.values()]
     if table_name not in allowed_tables:
@@ -423,27 +719,58 @@ def get_all_data(table_name: str = Query("cpu_performance", description="ชื�
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/upload")
-async def upload_file_automated(file: UploadFile = File(...)):
-    # ป้องกัน OOM: จำกัดขนาดไฟล์อัปโหลดไว้ไม่เกิน 50MB
+@app.get("/api/export")
+def export_table_to_excel(
+    table_name: str = Query(..., description="ชื่อตารางที่ต้องการ export"),
+    user: dict = Depends(require_roles("owner", "admin")),
+):
+    """ Export ข้อมูลทั้งตารางเป็นไฟล์ .xlsx ให้ดาวน์โหลด (เฉพาะ owner/admin) """
+    allowed_tables = [config["table_name"] for config in TABLE_REGISTRY.values()] + ["thresholds"]
+    if table_name not in allowed_tables:
+        raise HTTPException(status_code=400, detail="ไม่อนุญาตให้ export ตารางนี้")
+
+    try:
+        order_col = "occurrence_time" if table_name == "fm-history" else (
+            "updated_at" if table_name == "thresholds" else "begin_time"
+        )
+        df = pd.read_sql(f'SELECT * FROM "{table_name}" ORDER BY "{order_col}"', con=engine)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ดึงข้อมูลสำหรับ export ล้มเหลว: {e}")
+
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"ตาราง '{table_name}' ไม่มีข้อมูลให้ export")
+
+    # เขียนเป็น .xlsx ในหน่วยความจำ (ไม่สร้างไฟล์ชั่วคราวบนดิสก์)
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        # ชื่อ sheet ห้ามเกิน 31 ตัวอักษรและห้ามมีอักขระต้องห้ามของ Excel
+        safe_sheet_name = re.sub(r"[\\/*?:\[\]]", "_", table_name)[:31]
+        df.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+    buffer.seek(0)
+
+    export_filename = f"{table_name.replace('-', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{export_filename}"'},
+    )
+
+
+def _process_single_upload(contents: bytes, filename: str) -> dict:
+    """
+    ประมวลผลไฟล์ .xlsx 1 ไฟล์ (เป็น bytes ที่อ่านมาแล้ว) แล้ว upsert เข้า database ที่ตารางที่ถูกต้อง
+    แยกออกมาจาก endpoint เพื่อให้ /api/upload วนลูปเรียกได้หลายไฟล์ในคำขอเดียว
+    คืนค่า dict เดียวกับรูปแบบ response เดิมของ endpoint (status/filename/detected_table/...)
+    """
     MAX_FILE_SIZE = 50 * 1024 * 1024
-    
-    contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="ไฟล์มีขนาดใหญ่เกินไป (จำกัดไม่เกิน 50MB)")
+        return {"status": "error", "filename": filename, "message": "ไฟล์มีขนาดใหญ่เกินไป (จำกัดไม่เกิน 50MB)"}
 
     # ==========================================
     # ตรวจก่อนว่าไฟล์ที่โยนเข้ามาเป็น "ไฟล์ threshold รายเดือน" (มีหลาย sheet
     # ตรงกับ THRESHOLD_SHEETS) หรือเป็นไฟล์ performance ปกติ (1 sheet ต่อไฟล์)
     # ถ้าเป็นไฟล์ threshold -> ประมวลผลแยกแล้ว return เลย ไม่ต้องไปเดาตาราง performance
-    # ทำให้ปุ่ม "Import File (.xlsx)" เดิมในทุกหน้า frontend ใช้ได้กับไฟล์ threshold ได้เลย
-    # โดยไม่ต้องแก้โค้ด frontend แม้แต่บรรทัดเดียว
     # ==========================================
-    # ตรวจก่อนว่าไฟล์ที่โยนเข้ามาเป็น "ไฟล์ threshold รายเดือน" (มีหลาย sheet
-    # ตรงกับ THRESHOLD_SHEETS) หรือเป็นไฟล์ performance ปกติ (1 sheet ต่อไฟล์)
-    # ถ้าเป็นไฟล์ threshold -> ประมวลผลแยกแล้ว return เลย ไม่ต้องไปเดาตาราง performance
-    # ทำให้ปุ่ม "Import File (.xlsx)" เดิมในทุกหน้า frontend ใช้ได้กับไฟล์ threshold ได้เลย
-    # โดยไม่ต้องแก้โค้ด frontend แม้แต่บรรทัดเดียว
     #
     # หมายเหตุ perf: โหลด workbook แค่ "ครั้งเดียว" ด้วย read_only=True (ไฟล์นี้มี sheet อื่น
     # ในไฟล์เดียวกันที่หนักมาก เช่น หมื่นแถว -- โหลดซ้ำสองรอบ หรือโหลดแบบไม่ read_only จะกิน RAM
@@ -483,7 +810,7 @@ async def upload_file_automated(file: UploadFile = File(...)):
             if not all_records:
                 return {
                     "status": "error",
-                    "filename": file.filename,
+                    "filename": filename,
                     "sheets": sheet_report,
                     "message": f"เจอ sheet threshold ({', '.join(matched_threshold_sheets)}) แต่ parse แล้วไม่ได้ข้อมูลเลย "
                                f"รายละเอียดต่อ sheet: {sheet_report} — ตรวจสอบว่า header จริงอยู่แถวที่ 2 หรือไม่ "
@@ -496,35 +823,32 @@ async def upload_file_automated(file: UploadFile = File(...)):
 
             return {
                 "status": "success",
-                "filename": file.filename,
+                "filename": filename,
                 "detected_table": "thresholds",
                 "inserted_rows": len(df_thresh),
                 "sheets": sheet_report,
                 "message": f"ตรวจพบไฟล์ threshold (sheet: {', '.join(matched_threshold_sheets)}) "
                            f"นำเข้าตาราง 'thresholds' สำเร็จ {len(df_thresh)} รายการ!"
             }
-        except HTTPException:
-            raise
         except Exception as e:
-            return {"status": "error", "message": f"การประมวลผลไฟล์ threshold ล้มเหลว: {str(e)}"}
+            return {"status": "error", "filename": filename, "message": f"การประมวลผลไฟล์ threshold ล้มเหลว: {str(e)}"}
 
     # ==========================================
     # ไม่ใช่ไฟล์ threshold -> ไปตาม flow เดิม (ไฟล์ performance รายวัน 1 sheet/ไฟล์)
     # ==========================================
     try:
-        filename = file.filename
         df = pd.read_excel(io.BytesIO(contents))
         uploaded_columns = set(df.columns.tolist())
-        
+
         matched_key = None
-        
+
         # สเต็ปที่ 1: ตรวจสอบจากชื่อไฟล์ + เช็คโครงสร้างคร่าวๆ
         for key, config in TABLE_REGISTRY.items():
             if config["file_keyword"].lower() in filename.lower():
                 if all(col in uploaded_columns for col in config["required_columns"]):
                     matched_key = key
                     break
-        
+
         # สเต็ปที่ 2: กรณีชื่อไฟล์ถูกเปลี่ยน ค้นหาจากคะแนนลายเซ็นของคอลัมน์แทน
         if not matched_key:
             best_score = 0
@@ -536,55 +860,56 @@ async def upload_file_automated(file: UploadFile = File(...)):
                         matched_key = key
 
         if not matched_key:
-            raise HTTPException(
-                status_code=400, 
-                detail="ไม่สามารถระบุประเภทไฟล์ได้ โครงสร้างคอลัมน์ไม่ตรงกับตารางใดๆ ในระบบ"
-            )
-            
+            return {
+                "status": "error",
+                "filename": filename,
+                "message": "ไม่สามารถระบุประเภทไฟล์ได้ โครงสร้างคอลัมน์ไม่ตรงกับตารางใดๆ ในระบบ",
+            }
+
         # เริ่มกระบวนการ Mapping และทำความสะอาดข้อมูล
         target_config = TABLE_REGISTRY[matched_key]
         target_table = target_config["table_name"]
-        
+
         # เปลี่ยนชื่อคอลัมน์
         df = df.rename(columns=target_config["mapping"])
-        
+
         # แปลงข้อมูลเวลา
         for time_col in ['begin_time', 'end_time', 'occurrence_time', 'clear_time']:
             if time_col in df.columns:
                 df[time_col] = pd.to_datetime(df[time_col])
-        
+
         exclude_numeric_cols = [
-            'begin_time', 'end_time', 'occurrence_time', 'clear_time', 
-            'me_name', 'me_ip', 'measure_object', 'alarm_id', 
+            'begin_time', 'end_time', 'occurrence_time', 'clear_time',
+            'me_name', 'me_ip', 'measure_object', 'alarm_id',
             'alarm_code', 'alarm_code_name', 'alarm_severity'
         ]
 
         for col in df.columns:
             if col not in exclude_numeric_cols:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-                
+
         # เพิ่มคอลัมน์ Board, Location ถ้าเป็นไฟล์ประสิทธิภาพ
         if target_config["is_performance"]:
             df = extract_measure_object_details(df)
-            
+
         # จัดการค่าว่าง
         df = df.where(pd.notnull(df), None)
-        
+
         # กรองเฉพาะคอลัมน์ที่จะใช้
         allowed_db_columns = list(target_config["mapping"].values())
         if target_config["is_performance"]:
             allowed_db_columns.extend(['board_name', 'location_path', 'sub_function'])
-            
+
         final_columns = [col for col in allowed_db_columns if col in df.columns]
         df = df[final_columns]
-        
+
         # อัปโหลดเข้า Database แบบป้องกันข้อมูลซ้ำ
         execute_pg_upsert(
-            df=df, 
-            table_name=target_table, 
+            df=df,
+            table_name=target_table,
             conflict_target=target_config["conflict_target"]
         )
-        
+
         return {
             "status": "success",
             "filename": filename,
@@ -592,15 +917,49 @@ async def upload_file_automated(file: UploadFile = File(...)):
             "inserted_rows": len(df),
             "message": f"ระบบนำข้อมูลเข้าสู่ตาราง '{target_table}' สำเร็จเรียบร้อย!"
         }
-        
-    except HTTPException as http_ex:
-        raise http_ex
+
     except Exception as e:
-        return {"status": "error", "message": f"การประมวลผลล้มเหลว: {str(e)}"}
+        return {"status": "error", "filename": filename, "message": f"การประมวลผลล้มเหลว: {str(e)}"}
+
+
+@app.post("/api/upload")
+async def upload_file_automated(
+    files: List[UploadFile] = File(...),
+    user: dict = Depends(require_roles("owner", "admin")),
+):
+    """
+    รับไฟล์ .xlsx ได้หลายไฟล์พร้อมกันในคำขอเดียว (multi-file upload)
+    วนลูปประมวลผลทีละไฟล์ แต่ละไฟล์ระบบจะตรวจชนิดและ route เข้าตารางที่ถูกต้องเองอัตโนมัติ
+    (ไม่ขึ้นกับว่าไฟล์ไหนถูกส่งมาก่อน/หลัง หรือมาจากหน้าเว็บไหน)
+    เฉพาะสิทธิ์ owner หรือ admin เท่านั้นที่อัปโหลดได้
+    """
+    results = []
+    for f in files:
+        contents = await f.read()
+        result = _process_single_upload(contents, f.filename)
+        results.append(result)
+
+    success_count = sum(1 for r in results if r.get("status") == "success")
+    total = len(results)
+    overall_status = "success" if success_count == total else ("partial" if success_count else "error")
+
+    return {
+        "status": overall_status,
+        "total_files": total,
+        "success_count": success_count,
+        "failed_count": total - success_count,
+        "results": results,
+        "message": f"อัปโหลดสำเร็จ {success_count}/{total} ไฟล์"
+                    + ("" if success_count == total else " (บางไฟล์ล้มเหลว ดูรายละเอียดใน results)"),
+    }
 
 
 @app.post("/api/thresholds/upload")
-async def upload_thresholds(file: UploadFile = File(...), header_row: int = Query(2, description="แถวที่เป็น header จริงในแต่ละ sheet")):
+async def upload_thresholds(
+    file: UploadFile = File(...),
+    header_row: int = Query(2, description="แถวที่เป็น header จริงในแต่ละ sheet"),
+    user: dict = Depends(require_roles("owner", "admin")),
+):
     """
     อัปโหลดไฟล์ workbook รายเดือน (ไฟล์เดียวกับที่ใช้ upload ข้อมูล performance ก็ได้ ถ้ามี
     sheet: Control Ratio, Fan Ratio, MSU, Line board, Client board อยู่ในไฟล์เดียวกัน)
@@ -661,6 +1020,7 @@ def get_thresholds(
     me_name: str | None = Query(None),
     measure_object: str | None = Query(None, description="รองรับ partial match"),
     source_sheet: str | None = Query(None),
+    user: dict = Depends(get_current_user),
 ):
     """ ดึงค่า threshold ให้ frontend ใช้แทนค่าที่ hardcode ไว้ในโค้ด """
     try:

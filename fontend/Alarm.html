@@ -387,6 +387,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 }
 
 </style>
+<script src="common/api-client.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -420,10 +421,13 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       <div class="source-note" id="sourceNote"></div>
       <div class="upload-row">
         <span class="upload-status" id="uploadStatus" aria-live="polite"></span>
+        <button class="btn btn--ghost btn--sm" onclick="NEM_AUTH.downloadExport('TABLE_NAME_HERE')">
+          &#11015; Export to Excel
+        </button>
         <button class="btn btn--ghost btn--sm" id="uploadBtn" title="Import New File (.xlsx) into Database">
           &#11014; Import New File (.xlsx)
         </button>
-        <input type="file" id="fileInput" accept=".xlsx">
+        <input type="file" id="fileInput" accept=".xlsx" multiple>
       </div>
     </div>
   </div>
@@ -889,7 +893,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   async function fetchAllData(){
     connectionError = null;
     try{
-      const res = await fetch('http://localhost:8000/api/data?table_name=fm-history');
+      const res = await NEM_AUTH.apiNEM_AUTH.apiFetch('http://localhost:8000/api/data?table_name=fm-history');
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length){
         DATA = parseRows(json.data);
@@ -916,25 +920,11 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
     const input = document.getElementById('fileInput');
     btn.addEventListener('click', function(){ input.click(); });
     input.addEventListener('change', async function(){
-      const file = input.files && input.files[0];
+      const files = input.files;
+      if (!files || !files.length) return;
+      const data = await NEM_AUTH.uploadMultipleFiles(files, showUploadMsg);
       input.value = '';
-      if (!file) return;
-      const formData = new FormData();
-      formData.append('file', file);
-      showUploadMsg('Uploading and processing file...', true);
-      try{
-        const res = await fetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
-        const data = await res.json();
-        if (data && data.status === 'success'){
-          showUploadMsg(data.message || 'Import successful', true);
-          fetchAllData();
-        } else {
-          showUploadMsg('Error: ' + ((data && data.message) || '-'), false);
-        }
-      }catch(err){
-        console.error(err);
-        showUploadMsg('Upload failed. Unable to connect to server.', false);
-      }
+      if (data && data.success_count > 0) fetchAllData();
     });
   }
 
@@ -978,6 +968,11 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   </div>
   
   <ul class="side-nav-menu">
+    <li class="side-nav-item" style="padding:16px 20px 12px; display:flex; flex-direction:column; gap:2px;">
+      <span style="font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint);">Signed in as</span>
+      <span id="navUsername" style="font-family:var(--font-mono); font-size:13px; color:var(--accent); font-weight:600;">\u2014</span>
+    </li>
+
      <li class="side-nav-item">
       <a href="index.html" class="side-nav-link">Home</a>
      </li>
@@ -1006,6 +1001,9 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       <a href="ClientCard.html" class="side-nav-link">Client Card</a>
     </li>
 
+    <li class="side-nav-item">
+      <button class="side-nav-link" onclick="logout()" style="color:#F2585F; width:100%;">Logout</button>
+    </li>
     <!-- เมนูเดี่ยว 1 -->
 
     

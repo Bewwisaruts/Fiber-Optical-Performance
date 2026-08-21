@@ -157,20 +157,27 @@ footer.page-footer code{ color: var(--text-dim); }
   *{ transition-duration:0.01ms !important; animation-duration:0.01ms !important; animation:none !important; }
 }
 </style>
+<script src="common/api-client.js"></script>
 </head>
 <body>
 <div class="shell">
 
-  <div class="header">
-    <span class="brand-icon" aria-hidden="true">
-      <svg width="34" height="24" viewBox="0 0 28 20" fill="var(--accent)">
-        <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
-        <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
-        <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
-        <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
-      </svg>
-    </span>
-    <p class="brand-title">Network Elements Monitoring</p>
+  <div class="header" style="justify-content:space-between; align-items:center;">
+    <div style="display:flex; align-items:center; gap:14px;">
+      <span class="brand-icon" aria-hidden="true">
+        <svg width="34" height="24" viewBox="0 0 28 20" fill="var(--accent)">
+          <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
+          <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
+          <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
+          <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
+        </svg>
+      </span>
+      <p class="brand-title">Network Elements Monitoring</p>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; font-family:var(--font-mono); font-size:12.5px; color:var(--text-dim);">
+      <span id="navUsername">—</span>
+      <button onclick="logout()" style="background:var(--panel); border:1px solid var(--border-soft); color:#F2585F; border-radius:8px; padding:6px 12px; font-family:var(--font-body); font-size:12.5px; font-weight:600; cursor:pointer;">Logout</button>
+    </div>
   </div>
   <p class="brand-subtitle">ภาพรวมทุกด้านของเครือข่าย — คลิกการ์ดเพื่อดูรายละเอียดแต่ละส่วน</p>
 
@@ -243,7 +250,7 @@ footer.page-footer code{ color: var(--text-dim); }
     const map = {};
     if (!sourceSheet) return map;
     try{
-      const res = await fetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent(sourceSheet));
+      const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent(sourceSheet));
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data)){
         json.data.forEach(function(row){
@@ -613,7 +620,7 @@ footer.page-footer code{ color: var(--text-dim); }
   async function loadCategory(cat){
     try{
       const [res, thMap] = await Promise.all([
-        fetch('http://localhost:8000/api/data?table_name=' + encodeURIComponent(cat.table)),
+        NEM_AUTH.apiFetch('http://localhost:8000/api/data?table_name=' + encodeURIComponent(cat.table)),
         loadThresholdsFor(cat.sourceSheet)
       ]);
       const json = await res.json();

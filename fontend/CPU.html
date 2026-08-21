@@ -353,6 +353,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 }
 
 </style>
+<script src="common/api-client.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -386,10 +387,13 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       </div>
       <div class="upload-row">
         <span class="upload-status" id="uploadStatus" aria-live="polite"></span>
+        <button class="btn btn--ghost btn--sm" onclick="NEM_AUTH.downloadExport('TABLE_NAME_HERE')">
+          &#11015; Export to Excel
+        </button>
         <button class="btn btn--ghost btn--sm" id="uploadBtn" title="Import new History Query (.xlsx) for Updating the data">
           &#11014; Import File (.xlsx)
         </button>
-        <input type="file" id="fileInput" accept=".xlsx">
+        <input type="file" id="fileInput" accept=".xlsx" multiple>
       </div>
     </div>
   </div>
@@ -488,7 +492,7 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
   async function loadCpuThresholds(){
     const map = {};
     try{
-      const res = await fetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Control Ratio'));
+      const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Control Ratio'));
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data)){
         json.data.forEach(function(row){
@@ -816,7 +820,7 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
   async function fetchAllData() {
     try {
         const [res, thresholdMap] = await Promise.all([
-          fetch('http://localhost:8000/api/data'),
+          NEM_AUTH.apiFetch('http://localhost:8000/api/data'),
           loadCpuThresholds()
         ]);
         THRESHOLDS = thresholdMap;
@@ -854,7 +858,7 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
       showUploadMsg('Uploading and processing file...', true);
       
       try {
-        const res = await fetch('http://localhost:8000/api/upload', {
+        const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/upload', {
             method: 'POST',
             body: formData
         });
@@ -930,6 +934,11 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
   </div>
   
   <ul class="side-nav-menu">
+    <li class="side-nav-item" style="padding:16px 20px 12px; display:flex; flex-direction:column; gap:2px;">
+      <span style="font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint);">Signed in as</span>
+      <span id="navUsername" style="font-family:var(--font-mono); font-size:13px; color:var(--accent); font-weight:600;">\u2014</span>
+    </li>
+    
      <li class="side-nav-item">
       <a href="index.html" class="side-nav-link">Home</a>
      </li>
@@ -958,7 +967,10 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0 }, 
     <li class="side-nav-item">
       <a href="ClientCard.html" class="side-nav-link">Client Card</a>
     </li>
-
+    
+    <li class="side-nav-item">
+      <button class="side-nav-link" onclick="logout()" style="color:#F2585F; width:100%;">Logout</button>
+    </li>
     <!-- เมนูเดี่ยว 1 -->
 
     
