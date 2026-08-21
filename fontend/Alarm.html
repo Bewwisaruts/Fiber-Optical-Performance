@@ -387,7 +387,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 }
 
 </style>
-<script src="auth-client.js"></script>
+<script src="common/api-client.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -421,10 +421,13 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       <div class="source-note" id="sourceNote"></div>
       <div class="upload-row">
         <span class="upload-status" id="uploadStatus" aria-live="polite"></span>
+        <button class="btn btn--ghost btn--sm" onclick="NEM_AUTH.downloadExport('TABLE_NAME_HERE')">
+          &#11015; Export to Excel
+        </button>
         <button class="btn btn--ghost btn--sm" id="uploadBtn" title="Import New File (.xlsx) into Database">
           &#11014; Import New File (.xlsx)
         </button>
-        <input type="file" id="fileInput" accept=".xlsx">
+        <input type="file" id="fileInput" accept=".xlsx" multiple>
       </div>
     </div>
   </div>
@@ -890,7 +893,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   async function fetchAllData(){
     connectionError = null;
     try{
-      const res = await authFetch('http://localhost:8000/api/data?table_name=fm-history');
+      const res = await NEM_AUTH.apiNEM_AUTH.apiFetch('http://localhost:8000/api/data?table_name=fm-history');
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length){
         DATA = parseRows(json.data);
@@ -917,25 +920,11 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
     const input = document.getElementById('fileInput');
     btn.addEventListener('click', function(){ input.click(); });
     input.addEventListener('change', async function(){
-      const file = input.files && input.files[0];
+      const files = input.files;
+      if (!files || !files.length) return;
+      const data = await NEM_AUTH.uploadMultipleFiles(files, showUploadMsg);
       input.value = '';
-      if (!file) return;
-      const formData = new FormData();
-      formData.append('file', file);
-      showUploadMsg('Uploading and processing file...', true);
-      try{
-        const res = await authFetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
-        const data = await res.json();
-        if (data && data.status === 'success'){
-          showUploadMsg(data.message || 'Import successful', true);
-          fetchAllData();
-        } else {
-          showUploadMsg('Error: ' + ((data && data.message) || '-'), false);
-        }
-      }catch(err){
-        console.error(err);
-        showUploadMsg('Upload failed. Unable to connect to server.', false);
-      }
+      if (data && data.success_count > 0) fetchAllData();
     });
   }
 

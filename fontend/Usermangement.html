@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>จัดการผู้ใช้ | Network Elements Monitoring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0E14; --panel:#121821; --panel-2:#171F2A; --panel-3:#1C2531;
+  --border:#232D3A; --border-soft:#1A2330;
+  --text:#E7EDF4; --text-dim:#8996A6; --text-faint:#55616F;
+  --accent:#34D6BE; --accent-dim:#1E8577; --accent-bg:rgba(52,214,190,0.10);
+  --owner:#F2954D; --owner-bg:rgba(242,149,77,0.15);
+  --admin:#34D6BE; --admin-bg:rgba(52,214,190,0.15);
+  --visitor:#8996A6; --visitor-bg:rgba(137,150,166,0.15);
+  --crit:#F2585F; --crit-bg:rgba(242,88,95,0.15);
+  --ok:#3ECF8E; --ok-bg:rgba(62,207,142,0.13);
+  --font-display:'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono:'JetBrains Mono', ui-monospace, monospace;
+  --font-body:-apple-system,'Segoe UI',ui-sans-serif,system-ui,Roboto,sans-serif;
+  --radius-sm:6px; --radius:10px; --radius-lg:14px;
+}
+*{ box-sizing:border-box; }
+html{ background:var(--bg); }
+body{
+  margin:0; min-height:100vh;
+  background:
+    radial-gradient(1100px 500px at 15% -10%, rgba(52,214,190,0.07), transparent 60%),
+    var(--bg);
+  color:var(--text); font-family:var(--font-body); -webkit-font-smoothing:antialiased;
+}
+.shell{ max-width:960px; margin:0 auto; padding:28px 24px 64px; }
+
+.header{ display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+.brand-title{ font-family:var(--font-display); font-weight:700; font-size:22px; margin:0; }
+.brand-sub{ font-size:13px; color:var(--text-dim); margin:22px 0 20px; }
+
+.back-link{ font-size:12.5px; color:var(--accent); text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin-bottom:14px; }
+
+.card{ background:var(--panel); border:1px solid var(--border-soft); border-radius:var(--radius-lg); padding:20px 22px; margin-bottom:20px; }
+.card-title{ font-family:var(--font-display); font-weight:600; font-size:15px; margin:0 0 4px; }
+.card-desc{ font-size:12.5px; color:var(--text-dim); margin:0 0 16px; }
+
+table.user-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+.user-table thead th{
+  text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--text-faint); font-weight:600; padding:10px 12px; border-bottom:1px solid var(--border);
+}
+.user-table tbody td{ padding:12px; border-bottom:1px solid var(--border-soft); vertical-align:middle; }
+.user-table tbody tr:last-child td{ border-bottom:none; }
+
+.role-pill{ font-family:var(--font-mono); font-size:10.5px; font-weight:700; text-transform:uppercase;
+  padding:3px 10px; border-radius:999px; display:inline-block; }
+.role-pill--owner{ background:var(--owner-bg); color:var(--owner); }
+.role-pill--admin{ background:var(--admin-bg); color:var(--admin); }
+.role-pill--visitor{ background:var(--visitor-bg); color:var(--visitor); }
+
+.row-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+.btn{ font-family:var(--font-body); font-size:12px; font-weight:600; cursor:pointer; border-radius:var(--radius-sm);
+  padding:6px 11px; border:1px solid var(--border); background:var(--panel-2); color:var(--text);
+  transition:background .15s,border-color .15s; }
+.btn:hover{ background:var(--panel-3); border-color:#2C3A4A; }
+.btn--primary{ background:var(--accent); border-color:var(--accent); color:#06201B; font-weight:700; }
+.btn--primary:hover{ background:#42E2CA; }
+.btn--danger{ color:var(--crit); }
+.btn--danger:hover{ border-color:var(--crit); }
+.btn--sm{ padding:5px 9px; font-size:11.5px; }
+.btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+.form-row{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+.field{ flex:1; min-width:160px; }
+.field label{ display:block; font-size:11.5px; color:var(--text-dim); margin-bottom:5px; }
+.field input, .field select{
+  width:100%; padding:9px 11px; font-size:13.5px; font-family:var(--font-mono);
+  background:var(--panel-2); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text);
+}
+.field input:focus, .field select:focus{ outline:none; border-color:var(--accent); }
+
+.msg-box{ border-radius:var(--radius-sm); padding:10px 13px; font-size:12.5px; margin-bottom:14px; display:none; }
+.msg-box.is-visible{ display:block; }
+.msg-box.ok{ background:var(--ok-bg); color:var(--ok); }
+.msg-box.err{ background:var(--crit-bg); color:var(--crit); }
+
+.access-denied{ text-align:center; padding:60px 20px; color:var(--text-dim); }
+.access-denied-title{ font-family:var(--font-display); font-size:18px; font-weight:600; color:var(--text); margin-bottom:8px; }
+
+/* Modal */
+.backdrop{ position:fixed; inset:0; background:rgba(5,8,12,0.65); backdrop-filter:blur(2px);
+  opacity:0; pointer-events:none; transition:opacity .18s; z-index:50; }
+.backdrop.is-open{ opacity:1; pointer-events:auto; }
+.modal{ position:fixed; top:50%; left:50%; transform:translate(-50%,-46%); width:min(420px,90vw);
+  background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-lg);
+  z-index:51; padding:22px 24px; opacity:0; pointer-events:none; transition:opacity .18s, transform .18s; }
+.modal.is-open{ opacity:1; pointer-events:auto; transform:translate(-50%,-50%); }
+.modal-title{ font-family:var(--font-display); font-weight:600; font-size:16px; margin:0 0 4px; }
+.modal-desc{ font-size:12.5px; color:var(--text-dim); margin:0 0 18px; line-height:1.5; }
+.modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+.warn-box{ background:var(--owner-bg); color:var(--owner); border-radius:var(--radius-sm); padding:10px 12px; font-size:12px; margin-bottom:14px; display:none; }
+.warn-box.is-visible{ display:block; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <a class="back-link" href="index.html">&larr; กลับหน้าหลัก</a>
+
+  <div class="header">
+    <svg width="26" height="19" viewBox="0 0 28 20" fill="var(--accent)">
+      <rect x="0" y="13" width="5" height="7" rx="1.5"></rect>
+      <rect x="7.5" y="9" width="5" height="11" rx="1.5"></rect>
+      <rect x="15" y="5" width="5" height="15" rx="1.5"></rect>
+      <rect x="22.5" y="0" width="5" height="20" rx="1.5"></rect>
+    </svg>
+    <p class="brand-title">จัดการผู้ใช้ (User Management)</p>
+  </div>
+  <p class="brand-sub">เฉพาะ Owner เท่านั้นที่เข้าถึงหน้านี้ได้ — สร้างผู้ใช้ใหม่ เปลี่ยนสิทธิ์ รีเซ็ตรหัสผ่าน หรือโอนสิทธิ์ Owner</p>
+
+  <div id="accessDenied" class="access-denied" style="display:none">
+    <div class="access-denied-title">⛔ ไม่มีสิทธิ์เข้าถึงหน้านี้</div>
+    <p>หน้านี้สำหรับ Owner เท่านั้น บัญชีของคุณไม่มีสิทธิ์ระดับนี้</p>
+    <a href="index.html" class="btn btn--primary" style="text-decoration:none;display:inline-block;margin-top:10px;">กลับหน้าหลัก</a>
+  </div>
+
+  <div id="mainContent" style="display:none">
+
+    <div class="card">
+      <div class="card-title">สร้างผู้ใช้ใหม่</div>
+      <div class="card-desc">สร้างได้เฉพาะสิทธิ์ Admin หรือ Visitor เท่านั้น (การโอนสิทธิ์ Owner ทำแยกในตารางด้านล่าง)</div>
+      <div id="createMsg" class="msg-box"></div>
+      <form id="createUserForm">
+        <div class="form-row">
+          <div class="field">
+            <label>ชื่อผู้ใช้</label>
+            <input type="text" id="newUsername" required minlength="3" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)</label>
+            <input type="password" id="newPassword" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="field" style="max-width:160px;">
+            <label>สิทธิ์</label>
+            <select id="newRole">
+              <option value="admin">Admin</option>
+              <option value="visitor">Visitor</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn--primary" id="createBtn">+ สร้างผู้ใช้</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-title">รายชื่อผู้ใช้ทั้งหมด</div>
+      <div class="card-desc">Owner มีได้คนเดียวในระบบเท่านั้น</div>
+      <div id="listMsg" class="msg-box"></div>
+      <table class="user-table">
+        <thead>
+          <tr><th>ชื่อผู้ใช้</th><th>สิทธิ์</th><th>สร้างเมื่อ</th><th>จัดการ</th></tr>
+        </thead>
+        <tbody id="userTableBody"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal: เปลี่ยนสิทธิ์ / โอน Owner -->
+<div class="backdrop" id="roleBackdrop"></div>
+<div class="modal" id="roleModal">
+  <div class="modal-title">เปลี่ยนสิทธิ์ผู้ใช้</div>
+  <p class="modal-desc" id="roleModalDesc"></p>
+  <div class="warn-box" id="ownerTransferWarn">
+    ⚠ นี่คือการ <b>โอนสิทธิ์ Owner</b> ให้ผู้ใช้นี้ — บัญชี Owner ปัจจุบันของคุณจะถูกลดเป็น Admin โดยอัตโนมัติทันที การกระทำนี้ย้อนกลับไม่ได้ด้วยตัวเอง
+  </div>
+  <div class="field" style="margin-bottom:14px;">
+    <label>สิทธิ์ใหม่</label>
+    <select id="roleSelect">
+      <option value="admin">Admin</option>
+      <option value="visitor">Visitor</option>
+      <option value="owner">Owner (โอนสิทธิ์)</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>ใส่รหัสผ่านของคุณ (Owner) เพื่อยืนยัน</label>
+    <input type="password" id="roleConfirmPassword" autocomplete="current-password">
+  </div>
+  <div id="roleModalMsg" class="msg-box" style="margin-top:12px;"></div>
+  <div class="modal-actions">
+    <button class="btn" id="roleCancelBtn">ยกเลิก</button>
+    <button class="btn btn--primary" id="roleConfirmBtn">ยืนยัน</button>
+  </div>
+</div>
+
+<!-- Modal: รีเซ็ตรหัสผ่าน -->
+<div class="backdrop" id="resetBackdrop"></div>
+<div class="modal" id="resetModal">
+  <div class="modal-title">รีเซ็ตรหัสผ่าน</div>
+  <p class="modal-desc" id="resetModalDesc"></p>
+  <div class="field">
+    <label>รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)</label>
+    <input type="password" id="resetNewPassword" minlength="8" autocomplete="new-password">
+  </div>
+  <div id="resetModalMsg" class="msg-box" style="margin-top:12px;"></div>
+  <div class="modal-actions">
+    <button class="btn" id="resetCancelBtn">ยกเลิก</button>
+    <button class="btn btn--primary" id="resetConfirmBtn">ตั้งรหัสผ่านใหม่</button>
+  </div>
+</div>
+
+<script src="common/api-client.js"></script>
+<script>
+(function(){
+  'use strict';
+  const API_BASE = NEM_AUTH.API_BASE;
+  let currentTargetId = null;
+  let currentTargetUsername = null;
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function fmtDate(d){
+    if (!d) return '—';
+    return String(d).replace('T',' ').slice(0,16);
+  }
+  function showMsg(el, msg, ok){
+    el.textContent = msg;
+    el.className = 'msg-box is-visible ' + (ok ? 'ok' : 'err');
+  }
+
+  async function loadUsers(){
+    try{
+      const res = await NEM_AUTH.apiFetch(API_BASE + '/api/users');
+      if (res.status === 403){
+        document.getElementById('accessDenied').style.display = 'block';
+        document.getElementById('mainContent').style.display = 'none';
+        return;
+      }
+      const data = await res.json();
+      document.getElementById('accessDenied').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+
+      if (data.status !== 'success'){
+        showMsg(document.getElementById('listMsg'), data.message || 'โหลดรายชื่อผู้ใช้ไม่สำเร็จ', false);
+        return;
+      }
+
+      const me = NEM_AUTH.getUser();
+      const tbody = document.getElementById('userTableBody');
+      tbody.innerHTML = data.data.map(function(u){
+        const isSelf = me && me.id === u.id;
+        const isOwner = u.role === 'owner';
+        return '<tr>' +
+          '<td>' + esc(u.username) + (isSelf ? ' <span style="color:var(--text-faint);font-size:11px;">(คุณ)</span>' : '') + '</td>' +
+          '<td><span class="role-pill role-pill--' + u.role + '">' + u.role + '</span></td>' +
+          '<td style="color:var(--text-dim);font-family:var(--font-mono);font-size:12px;">' + fmtDate(u.created_at) + '</td>' +
+          '<td><div class="row-actions">' +
+            '<button class="btn btn--sm" onclick="openRoleModal(' + u.id + ',\'' + esc(u.username).replace(/'/g,"\\'") + '\',\'' + u.role + '\')">เปลี่ยนสิทธิ์</button>' +
+            '<button class="btn btn--sm" onclick="openResetModal(' + u.id + ',\'' + esc(u.username).replace(/'/g,"\\'") + '\')">รีเซ็ตรหัสผ่าน</button>' +
+            (isOwner || isSelf ? '' : '<button class="btn btn--sm btn--danger" onclick="deleteUser(' + u.id + ',\'' + esc(u.username).replace(/'/g,"\\'") + '\')">ลบ</button>') +
+          '</div></td>' +
+          '</tr>';
+      }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-faint);padding:24px;">ยังไม่มีผู้ใช้</td></tr>';
+    }catch(err){
+      console.error(err);
+    }
+  }
+
+  // ---------- สร้างผู้ใช้ ----------
+  document.getElementById('createUserForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const btn = document.getElementById('createBtn');
+    const msgEl = document.getElementById('createMsg');
+    btn.disabled = true;
+
+    const body = {
+      username: document.getElementById('newUsername').value.trim(),
+      password: document.getElementById('newPassword').value,
+      role: document.getElementById('newRole').value
+    };
+
+    try{
+      const res = await NEM_AUTH.apiFetch(API_BASE + '/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      showMsg(msgEl, data.message || data.detail || 'สร้างผู้ใช้ล้มเหลว', res.ok);
+      if (res.ok){
+        document.getElementById('createUserForm').reset();
+        loadUsers();
+      }
+    }catch(err){
+      showMsg(msgEl, 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+    }
+    btn.disabled = false;
+  });
+
+  // ---------- เปลี่ยนสิทธิ์ / โอน Owner ----------
+  window.openRoleModal = function(id, username, currentRole){
+    currentTargetId = id;
+    currentTargetUsername = username;
+    document.getElementById('roleModalDesc').textContent = 'เปลี่ยนสิทธิ์ของ "' + username + '" (ปัจจุบัน: ' + currentRole + ')';
+    document.getElementById('roleSelect').value = currentRole === 'owner' ? 'admin' : currentRole;
+    document.getElementById('roleConfirmPassword').value = '';
+    document.getElementById('roleModalMsg').className = 'msg-box';
+    updateOwnerWarn();
+    document.getElementById('roleBackdrop').classList.add('is-open');
+    document.getElementById('roleModal').classList.add('is-open');
+  };
+  function updateOwnerWarn(){
+    const isOwnerTransfer = document.getElementById('roleSelect').value === 'owner';
+    document.getElementById('ownerTransferWarn').classList.toggle('is-visible', isOwnerTransfer);
+  }
+  document.getElementById('roleSelect').addEventListener('change', updateOwnerWarn);
+
+  function closeRoleModal(){
+    document.getElementById('roleBackdrop').classList.remove('is-open');
+    document.getElementById('roleModal').classList.remove('is-open');
+  }
+  document.getElementById('roleCancelBtn').addEventListener('click', closeRoleModal);
+  document.getElementById('roleBackdrop').addEventListener('click', closeRoleModal);
+
+  document.getElementById('roleConfirmBtn').addEventListener('click', async function(){
+    const msgEl = document.getElementById('roleModalMsg');
+    const newRole = document.getElementById('roleSelect').value;
+    const ownerPassword = document.getElementById('roleConfirmPassword').value;
+    if (!ownerPassword){
+      showMsg(msgEl, 'กรุณาใส่รหัสผ่านของคุณเพื่อยืนยัน', false);
+      return;
+    }
+    this.disabled = true;
+    try{
+      const res = await NEM_AUTH.apiFetch(API_BASE + '/api/users/' + currentTargetId + '/role', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_role: newRole, owner_password: ownerPassword })
+      });
+      const data = await res.json();
+      showMsg(msgEl, data.message || data.detail || 'เปลี่ยนสิทธิ์ล้มเหลว', res.ok);
+      if (res.ok){
+        setTimeout(function(){
+          closeRoleModal();
+          loadUsers();
+          // ถ้าเพิ่งโอน Owner ไป role ของเราเองเปลี่ยนเป็น admin แล้ว ต้อง refresh badge
+          if (newRole === 'owner') location.reload();
+        }, 900);
+      }
+    }catch(err){
+      showMsg(msgEl, 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+    }
+    this.disabled = false;
+  });
+
+  // ---------- รีเซ็ตรหัสผ่าน ----------
+  window.openResetModal = function(id, username){
+    currentTargetId = id;
+    currentTargetUsername = username;
+    document.getElementById('resetModalDesc').textContent = 'ตั้งรหัสผ่านใหม่ให้ "' + username + '"';
+    document.getElementById('resetNewPassword').value = '';
+    document.getElementById('resetModalMsg').className = 'msg-box';
+    document.getElementById('resetBackdrop').classList.add('is-open');
+    document.getElementById('resetModal').classList.add('is-open');
+  };
+  function closeResetModal(){
+    document.getElementById('resetBackdrop').classList.remove('is-open');
+    document.getElementById('resetModal').classList.remove('is-open');
+  }
+  document.getElementById('resetCancelBtn').addEventListener('click', closeResetModal);
+  document.getElementById('resetBackdrop').addEventListener('click', closeResetModal);
+
+  document.getElementById('resetConfirmBtn').addEventListener('click', async function(){
+    const msgEl = document.getElementById('resetModalMsg');
+    const newPassword = document.getElementById('resetNewPassword').value;
+    if (newPassword.length < 8){
+      showMsg(msgEl, 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร', false);
+      return;
+    }
+    this.disabled = true;
+    try{
+      const res = await NEM_AUTH.apiFetch(API_BASE + '/api/users/' + currentTargetId + '/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_password: newPassword })
+      });
+      const data = await res.json();
+      showMsg(msgEl, data.message || data.detail || 'รีเซ็ตรหัสผ่านล้มเหลว', res.ok);
+      if (res.ok) setTimeout(closeResetModal, 900);
+    }catch(err){
+      showMsg(msgEl, 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', false);
+    }
+    this.disabled = false;
+  });
+
+  // ---------- ลบผู้ใช้ ----------
+  window.deleteUser = async function(id, username){
+    if (!confirm('ยืนยันลบผู้ใช้ "' + username + '"? การกระทำนี้ย้อนกลับไม่ได้')) return;
+    try{
+      const res = await NEM_AUTH.apiFetch(API_BASE + '/api/users/' + id, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) alert(data.detail || data.message || 'ลบผู้ใช้ล้มเหลว');
+      loadUsers();
+    }catch(err){
+      alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', function(){
+    // รอให้ api-client.js เช็ค auth เสร็จก่อนสักครู่ค่อยโหลดรายชื่อผู้ใช้
+    setTimeout(loadUsers, 300);
+  });
+})();
+</script>
+</body>
+</html>

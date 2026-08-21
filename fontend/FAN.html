@@ -385,7 +385,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 }
 
 </style>
-<script src="auth-client.js"></script>
+<script src="common/api-client.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -419,10 +419,13 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       <div class="source-note" id="sourceNote"></div>
       <div class="upload-row">
         <span class="upload-status" id="uploadStatus" aria-live="polite"></span>
+        <button class="btn btn--ghost btn--sm" onclick="NEM_AUTH.downloadExport('TABLE_NAME_HERE')">
+          &#11015; Export to Excel
+        </button>
         <button class="btn btn--ghost btn--sm" id="uploadBtn" title="Import new History Query file (.xlsx) into the database">
           &#11014; Import File (.xlsx)
         </button>
-        <input type="file" id="fileInput" accept=".xlsx">
+        <input type="file" id="fileInput" accept=".xlsx" multiple>
       </div>
     </div>
   </div>
@@ -512,7 +515,7 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
   async function loadFanThresholds(){
     const map = {};
     try{
-      const res = await authFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('FAN Ratio'));
+      const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('FAN Ratio'));
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data)){
         json.data.forEach(function(row){
@@ -932,7 +935,7 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
     let live = false;
     try{
       const [dataRes, thresholdMap] = await Promise.all([
-        authFetch('http://localhost:8000/api/data?table_name=fan_performance').then(r => r.json()).catch(e => null),
+        NEM_AUTH.apiFetch('http://localhost:8000/api/data?table_name=fan_performance').then(r => r.json()).catch(e => null),
         loadFanThresholds()
       ]);
       THRESHOLDS = thresholdMap;
@@ -972,7 +975,7 @@ let DATA = { "meta": { "begin": "", "end": "", "granularity": "", "count": 0, "t
       formData.append('file', file);
       showUploadMsg('Uploading and processing file...', true);
       try{
-        const res = await authFetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
+        const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
         const data = await res.json();
         if (data && data.status === 'success'){
           showUploadMsg(data.message || 'File uploaded and processed successfully', true);

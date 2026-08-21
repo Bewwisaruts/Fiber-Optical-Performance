@@ -379,7 +379,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
 }
 
 </style>
-<script src="auth-client.js"></script>
+<script src="common/api-client.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -413,10 +413,13 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       <div class="source-note" id="sourceNote"></div>
       <div class="upload-row">
         <span class="upload-status" id="uploadStatus" aria-live="polite"></span>
+        <button class="btn btn--ghost btn--sm" onclick="NEM_AUTH.downloadExport('TABLE_NAME_HERE')">
+          &#11015; Export to Excel
+        </button>
         <button class="btn btn--ghost btn--sm" id="uploadBtn" title="นำเข้าไฟล์ History Query (Client card performance) ฉบับใหม่ (.xlsx) เข้าฐานข้อมูล">
           &#11014; นำเข้าไฟล์ใหม่ (.xlsx)
         </button>
-        <input type="file" id="fileInput" accept=".xlsx">
+        <input type="file" id="fileInput" accept=".xlsx" multiple>
       </div>
     </div>
   </div>
@@ -505,7 +508,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
   async function loadClientThresholds(){
     const outMap = {}, inMap = {};
     try{
-      const res = await authFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Client board'));
+      const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent('Client board'));
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data)){
         json.data.forEach(function(row){
@@ -944,7 +947,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
     connectionError = null;
     try{
       const [res, thresholdMaps] = await Promise.all([
-        authFetch('http://localhost:8000/api/data?table_name=client-card_performance'),
+        NEM_AUTH.apiFetch('http://localhost:8000/api/data?table_name=client-card_performance'),
         loadClientThresholds()
       ]);
       OUT_THRESHOLDS = thresholdMaps.outMap;
@@ -985,7 +988,7 @@ footer.page-footer{ margin-top:22px; text-align:center; font-size:12px; color: v
       formData.append('file', file);
       showUploadMsg('\u0e01\u0e33\u0e25\u0e31\u0e07\u0e2d\u0e31\u0e1b\u0e42\u0e2b\u0e25\u0e14\u0e41\u0e25\u0e30\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e1c\u0e25\u0e44\u0e1f\u0e25\u0e4c...', true);
       try{
-        const res = await authFetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
+        const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/upload', { method:'POST', body: formData });
         const data = await res.json();
         if (data && data.status === 'success'){
           showUploadMsg(data.message || '\u0e19\u0e33\u0e40\u0e02\u0e49\u0e32\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08', true);

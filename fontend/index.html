@@ -157,7 +157,7 @@ footer.page-footer code{ color: var(--text-dim); }
   *{ transition-duration:0.01ms !important; animation-duration:0.01ms !important; animation:none !important; }
 }
 </style>
-<script src="auth-client.js"></script>
+<script src="common/api-client.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -250,7 +250,7 @@ footer.page-footer code{ color: var(--text-dim); }
     const map = {};
     if (!sourceSheet) return map;
     try{
-      const res = await authFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent(sourceSheet));
+      const res = await NEM_AUTH.apiFetch('http://localhost:8000/api/thresholds?source_sheet=' + encodeURIComponent(sourceSheet));
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data)){
         json.data.forEach(function(row){
@@ -620,7 +620,7 @@ footer.page-footer code{ color: var(--text-dim); }
   async function loadCategory(cat){
     try{
       const [res, thMap] = await Promise.all([
-        authFetch('http://localhost:8000/api/data?table_name=' + encodeURIComponent(cat.table)),
+        NEM_AUTH.apiFetch('http://localhost:8000/api/data?table_name=' + encodeURIComponent(cat.table)),
         loadThresholdsFor(cat.sourceSheet)
       ]);
       const json = await res.json();
